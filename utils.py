@@ -11,9 +11,12 @@ LOG_FILE = LOG_DIR + '/app.log'
 DATA_DIR = r'./data'
 SETTINGS_FILE = DATA_DIR + '/settings.json'
 _DEFAULT_SETTINGS = {"api_key": "", "log_type": "DEBUG"}
+PROGRESS_FILE = DATA_DIR + '/progress.json'
+_DEFAULT_PROGRESS = {"screen_type": "MUTUAL_FUND", "total_tickers": 0, "offset": 0, "floor": -1}
+
 
 _MAKE_DIRS = [LOG_DIR, DATA_DIR]
-_MAKE_FILES = [(SETTINGS_FILE, _DEFAULT_SETTINGS)]
+_MAKE_FILES = [(SETTINGS_FILE, _DEFAULT_SETTINGS), (PROGRESS_FILE, _DEFAULT_PROGRESS)]
 
 for make_dir in _MAKE_DIRS:
     if not os.path.exists(make_dir):

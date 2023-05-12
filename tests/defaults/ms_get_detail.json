@@ -1,0 +1,31 @@
+[
+  {
+    "Name": "First Trust Dow Jones Internet ETF",
+    "Currency": "USD",
+    "Exchange": "ARCX",
+    "Type": "FE",
+    "TypeName": "ETF",
+    "ExchangeShortName": "ARCX",
+    "ExchangeTimeZoneOffsetFromUTCInSeconds": -18000,
+    "CompanyId": "0C00001ZPA",
+    "PerformanceId": "0P0000603I",
+    "ShareClassId": "FEUSA04AGY",
+    "FundShareClassId": "FEUSA04AGY",
+    "InceptionDate": "2006-06-19",
+    "RequestKey": "0P0000603I",
+    "Detail": {
+      "StarRating": 2,
+      "EquityStyle": null,
+      "IsStarRatingBasedOnExtendedPerformance": false,
+      "PremiumDiscount": null,
+      "TotalAssetsInMillions": 3549.13444627,
+      "BidAskSpreadPercent": 0.477,
+      "TwelveMonthYield": 0,
+      "ExpenseRatio": 0.51,
+      "Category": "Technology",
+      "FundFamilyId": "0C00001ZPA"
+    },
+    "RegionAndTicker": "USA:FDN",
+    "Instrument": "126.1.FDN"
+  }
+]
