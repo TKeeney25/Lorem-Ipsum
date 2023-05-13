@@ -16,3 +16,18 @@ Screen:
 * Needs:
   * Max Total Results
   * Current Total Results
+
+ScreenStates:
+* Mutual Fund
+  * IF ready -> defaults
+  * Elif etf -> continue
+  * Elif mutual fund -> progress
+* ETF
+  * IF mutual fund -> defaults
+  * Elif etf -> progress
+
+Commonality
+* If State == PCurrent -> Progress
+* If State == Ready -> defaults
+* If Current == ETF and State == Mutual Fund -> defaults
+* If Current == Mutual Fund and State == ETF -> continue

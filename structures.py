@@ -23,6 +23,13 @@ class Response:
                     return_dict.update(all_vars[var].to_dict())
                 else:
                     return_dict[var] = all_vars[var].to_dict()
+            elif isinstance(all_vars[var], list):
+                return_dict[var] = []
+                for v in all_vars[var]:
+                    if isinstance(v, Response):
+                        return_dict[var].append(v.to_dict())
+                    else:
+                        return_dict[var].append(v)
             else:
                 if len(all_vars) == 1:
                     return all_vars[var]
@@ -97,7 +104,13 @@ class ScreenerResponse(Response):
         self.start = IntegerResponse('start', data)
         self.count = IntegerResponse('count', data)
         self.total = IntegerResponse('total', data)
-        data = data['quotes'][0]
+        self.quotes = []
+        for quote in data['quotes']:
+            self.quotes.append(Quote(quote))
+
+class Quote(Response):
+    def __init__(self, data):
+        super().__init__('Quotes', data)
         self.symbol = TextResponse('symbol', data)
         self.longName = TextResponse('longName', data)
         self.quoteType = TextResponse('quoteType', data)
@@ -115,7 +128,6 @@ class ScreenerResponse(Response):
         self.sharesOutstanding = IntegerResponse('sharesOutstanding', data)
         self.tradeable = TextResponse('tradeable', data)
         self.triggerable = TextResponse('triggerable', data)
-
 
 class PerformanceIdResponse(Response):
     def __init__(self, data):
@@ -185,6 +197,9 @@ class FundProfile(Response):
     def __init__(self, data):
         super().__init__('fundProfile', data)
         self.feesExpensesInvestment = FeesExpensesInvestment(self.data)
+        self.brokerages = []
+        for brokerage in self.data['brokerages']:
+            self.brokerages.append(brokerage)
 
 
 class FeesExpensesInvestment(Response):
