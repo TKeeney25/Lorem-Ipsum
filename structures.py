@@ -9,6 +9,9 @@ class Response:
         except KeyError:
             self.data = data
 
+    def __str__(self):
+        return str(self.data)
+
     def get_vars(self):
         var = vars(self).copy()
         var.pop('api_id')
@@ -132,8 +135,15 @@ class Quote(Response):
 class PerformanceIdResponse(Response):
     def __init__(self, data):
         super().__init__('main', data)
-        self.performanceId = TextResponse('PerformanceId', data)
-        self.symbol = MSTickerResponse('RegionAndTicker', data)
+        self.id = TextResponse('id', data)
+        self.name = TextResponse('name', data)
+        self.description = TextResponse('description', data)
+        self.exchange = TextResponse('exchange', data)
+        self.performanceId = TextResponse('performanceId', data)
+        self.securityType = TextResponse('securityType', data)
+        self.symbol = TextResponse('ticker', data)
+        self.type = TextResponse('type', data)
+        self.url = TextResponse('url', data)
 
 
 # region MSFinance Response
@@ -214,6 +224,6 @@ class AnnualTotalReturns(Response):
         returns = self.data['returns']
         for single_return in self.data['returns']:
             single_return['annualValue'] = RealResponse('annualValue', single_return).data
-        self.data = returns
+        self.returns = returns
 
 # endregion

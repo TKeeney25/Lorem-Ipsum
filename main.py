@@ -34,8 +34,10 @@ SCREEN_PRIORITY = 0
 YH_PRIORITY = 0.5
 PERF_ID_PRIORITY = 0
 MS_PRIORITY = 0.5
+DEATH_PRIORITY = 10
 
 screen_incomplete = True
+perf_id_incomplete = True
 
 MAX_TOTAL: int = 5000
 DEFAULT_JUMP: int = 250
@@ -47,6 +49,31 @@ yh_screen_dynamic_total = 0
 yh_screen_dynamic_total_lock = threading.Lock()
 yh_screen_dynamic_total_update_event = threading.Event()
 
+yh_api_calls_remaining = 0
+yh_api_calls_remaining_lock = threading.Lock()
+yh_api_calls_remaining_condition = threading.Condition(yh_api_calls_remaining_lock)
+
+ms_api_calls_remaining = 0
+ms_api_calls_remaining_lock = threading.Lock()
+ms_api_calls_remaining_condition = threading.Condition(ms_api_calls_remaining_lock)
+
+program_ended = False
+
+
+def update_api_calls():
+    global yh_api_calls_remaining, ms_api_calls_remaining
+    yh_api_calls_remaining_lock.acquire()
+    yh_api_calls_remaining = 4
+    yh_api_calls_remaining_condition.notify(4)
+    yh_api_calls_remaining_lock.release()
+
+    ms_api_calls_remaining_lock.acquire()
+    ms_api_calls_remaining = 4
+    ms_api_calls_remaining_condition.notify(4)
+    ms_api_calls_remaining_lock.release()
+    if not program_ended:
+        threading.Timer(1, update_api_calls).start()
+
 
 def screen_fund(screen_type: str, offset: int, floor: int, roof=None, updater=True) -> {}:
     global yh_screen_dynamic_total
@@ -57,6 +84,8 @@ def screen_fund(screen_type: str, offset: int, floor: int, roof=None, updater=Tr
         payload = btwn_payload(floor, roof)
 
     screen_data = get_screen(screen_type, offset, payload)
+    if screen_data is None:
+        return None
     screener_response = ScreenerResponse(screen_data)
 
     if updater:
@@ -70,8 +99,15 @@ def screen_fund(screen_type: str, offset: int, floor: int, roof=None, updater=Tr
 
 # TODO find good solution to duplication
 def yh_worker():
-    global yh_failures
+    global yh_failures, yh_api_calls_remaining
     while True:
+        yh_api_calls_remaining_lock.acquire()
+        yh_api_calls_remaining_condition.wait()
+        if yh_api_calls_remaining == 0:
+            yh_api_calls_remaining_lock.release()
+            continue
+        yh_api_calls_remaining -= 1
+        yh_api_calls_remaining_lock.release()
         priority, content = yh_queue.get()
         method, args = content
         if method is None:
@@ -96,8 +132,15 @@ def yh_worker():
 
 
 def ms_worker():
-    global ms_failures
+    global ms_failures, ms_api_calls_remaining
     while True:
+        ms_api_calls_remaining_lock.acquire()
+        ms_api_calls_remaining_condition.wait()
+        if ms_api_calls_remaining == 0:
+            ms_api_calls_remaining_lock.release()
+            continue
+        ms_api_calls_remaining -= 1
+        ms_api_calls_remaining_lock.release()
         priority, content = ms_queue.get()
         method, args = content
         if method is None:
@@ -128,6 +171,7 @@ def drop_roof(floor, roof, rate_of_approach=4):
 def screen_master():
     global screen_incomplete, yh_screen_dynamic_total
     if utils.progress['screen_state'] == utils.STATE_FINISHED:
+        screen_incomplete = False
         return
 
     for screen_state in [utils.STATE_MUTUAL_FUND, utils.STATE_ETF]:
@@ -148,6 +192,8 @@ def screen_master():
             screen_result = screen_fund(screen_state, starting_offset, current_floor)
             screen_result_dict = screen_result.to_dict()
             remaining_total = screen_result_dict['total']
+            remaining_total = 249  # TODO only leave in place for testing
+
             db_write_queue.put(screen_result)
 
             yh_screen_dynamic_total_lock.acquire()
@@ -166,8 +212,6 @@ def screen_master():
                 yh_screen_dynamic_total_lock.acquire()
                 yh_screen_dynamic_total = 249  # TODO only leave in place for testing
                 print(f'{bottom_offset}/{yh_screen_dynamic_total}:{remaining_total}')
-                logger.debug(
-                    f'{bottom_offset}/{yh_screen_dynamic_total}:{remaining_total}')
                 if yh_screen_dynamic_total > MAX_TOTAL:
                     current_roof = drop_roof(current_floor, current_roof)
 
@@ -187,24 +231,55 @@ def screen_master():
             starting_offset = 0
     utils.progress['screen_state'] = utils.STATE_FINISHED
     utils.dump_progress()
+    screen_incomplete = False
 
 
 # TODO find good solution to duplication
 def fetch_yh_fund(fund):
-    return YHFinanceResponse(get_yh_info(fund))
+    data = get_yh_info(fund)
+    if data is None:
+        return None
+    try:
+        return YHFinanceResponse(data)
+    except KeyError:
+        logger.debug(data)
+        return BadFund(fund)
+
+
+class BadFund:
+    def __init__(self, symbol):
+        self.symbol = symbol
+
+    def __str__(self):
+        return self.symbol
 
 
 def fetch_perf_id(fund):
-    return PerformanceIdResponse(get_perf_id(fund))
+    data = get_perf_id(fund)
+    if data is None:
+        return None
+    result = None
+    for entry in data['results']:
+        if entry['ticker'] == fund:
+            result = entry
+            break
+    if result is None:
+        return BadFund(fund)
+    return PerformanceIdResponse(result)
 
 
 def fetch_ms_fund(fund):
-    return MSFinanceResponse(get_ms_info(fund))
+    data = get_ms_info(fund)
+    if data is None:
+        return None
+    return MSFinanceResponse(data[0])
 
 
 def yh_master():
     already_queued = set()
-    while True:
+    final_check = True
+    while screen_incomplete or final_check:
+        final_check = screen_incomplete
         db_read_yh_event.wait()
         valid_funds = db_read_yh_data
         db_read_yh_event.clear()
@@ -213,11 +288,16 @@ def yh_master():
                 continue
             already_queued.add(fund)
             yh_queue.put((YH_PRIORITY, (fetch_yh_fund, (fund,))))
+    for _ in range(0, MAX_WORKERS):
+        yh_queue.put((DEATH_PRIORITY, (None, None)))
 
 
 def perf_id_master():
+    global perf_id_incomplete
     already_queued = set()
-    while True:
+    final_check = True
+    while screen_incomplete or final_check:
+        final_check = screen_incomplete
         db_read_perf_event.wait()
         valid_funds = db_read_perf_data
         db_read_perf_event.clear()
@@ -226,11 +306,14 @@ def perf_id_master():
                 continue
             already_queued.add(fund)
             ms_queue.put((PERF_ID_PRIORITY, (fetch_perf_id, (fund,))))
+    perf_id_incomplete = False
 
 
 def ms_master():
     already_queued = set()
-    while True:
+    final_check = True
+    while perf_id_incomplete or final_check:
+        final_check = screen_incomplete
         db_read_ms_event.wait()
         valid_funds = db_read_ms_data
         db_read_ms_event.clear()
@@ -238,16 +321,19 @@ def ms_master():
             if fund in already_queued:
                 continue
             already_queued.add(fund)
+            print((MS_PRIORITY, (fetch_ms_fund, fund)))
             ms_queue.put((MS_PRIORITY, (fetch_ms_fund, (fund,))))
+    for _ in range(0, MAX_WORKERS):
+        ms_queue.put((DEATH_PRIORITY, (None, None)))
 
 
 def manage_db():
     global db_read_yh_data, db_read_ms_data, db_read_perf_data
     db = database.db_start()
-    db.drop_tables()  # TODO remove when not testing
     db.create_tables()
-    try:
-        while True:
+    write_queue_value = None
+    while True:
+        try:
             if not db_read_yh_event.is_set():
                 db_read_yh_data = db.valid_for_yh_finance_view()
                 db_read_yh_event.set()
@@ -271,13 +357,14 @@ def manage_db():
                     db.update_performance_id(write_queue_value.to_dict())
                 elif isinstance(write_queue_value, MSFinanceResponse):
                     db.update_from_ms_finance(write_queue_value.to_dict())
+                elif isinstance(write_queue_value, BadFund):
+                    logger.error(f'Bad Fund: {write_queue_value.symbol}')
+                    db.delete_fund(write_queue_value.symbol)
                 db_write_queue.task_done()
-    except Exception as e:
-        print(e)
-
-
-def todo():
-    pass
+        except Exception as e:
+            print(e)
+            logger.exception(f'Value: {write_queue_value}, Exception: {e}')
+            sleep(1)
 
 
 def join_workers(queue: PriorityQueue, workers: []) -> None:
@@ -286,14 +373,20 @@ def join_workers(queue: PriorityQueue, workers: []) -> None:
     for worker in workers:
         worker.join()
 
+def debug_aid(*args):
+    print_str = ''
+    for arg in args:
+        print_str += f'|{arg.name}, {arg.is_alive()}|'
+    print(print_str)
+    threading.Timer(5, debug_aid, args).start()
 
 def main():
+    global program_ended
     screen_thread = threading.Thread(target=screen_master, name='screen_master')
     db_thread = threading.Thread(target=manage_db, name='db_master')
     ms_thread = threading.Thread(target=ms_master, name='ms_master')
     perf_id_thread = threading.Thread(target=perf_id_master, name='perf_id_master')
     yh_thread = threading.Thread(target=yh_master, name='yh_master')
-
     yh_workers = []
     for i in range(0, MAX_WORKERS):
         yh_workers.append(threading.Thread(target=yh_worker, name=f'yh_worker_{i}'))
@@ -301,7 +394,7 @@ def main():
     ms_workers = []
     for i in range(0, MAX_WORKERS):
         ms_workers.append(threading.Thread(target=ms_worker, name=f'ms_worker_{i}'))
-
+    update_api_calls()
     db_thread.start()
     for worker in yh_workers:
         worker.start()
@@ -319,10 +412,9 @@ def main():
     join_workers(ms_queue, ms_workers)
     db_write_queue.put(None)
     db_thread.join()
+    program_ended = True
     return
 
 
 if __name__ == '__main__':
     main()
-
-# TODO find a way to speed limit the threads to 5 requests/second

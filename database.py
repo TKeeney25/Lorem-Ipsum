@@ -1,4 +1,6 @@
 import datetime
+import re
+
 from dateutil.relativedelta import *
 import sqlite3
 import time
@@ -192,10 +194,13 @@ IF (:symbol IN (SELECT symbol FROM funds)
 COMMIT TRANSACTION;
 '''
 
-
+def functionRegex(value, pattern):
+    c_pattern = re.compile(pattern.lower())
+    return c_pattern.search(fr'\b{value.lower()}\b') is not None
 class DB:
     def __init__(self, dbname='tickerTracker.db'):
         self.connection = sqlite3.connect(dbname)
+        self.connection.create_function('REGEXP', 2, functionRegex)
         self.cursor = self.connection.cursor()
 
     def close_connections(self):
@@ -209,9 +214,9 @@ class DB:
             self.cursor.execute(CREATE_ANNUALTOTALRETURNS_TABLE)
             self.cursor.execute(CREATE_BROKERAGES_TABLE)
             self.cursor.execute('COMMIT TRANSACTION;')
-        except sqlite3.OperationalError as error:
+        except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
-            raise error
+            raise e
 
     def drop_tables(self):
         self.cursor.execute('BEGIN TRANSACTION;')
@@ -220,16 +225,16 @@ class DB:
             self.cursor.execute(DROP_FUNDS_TABLE)
             self.cursor.execute(DROP_BROKERAGES_TABLE)
             self.cursor.execute('COMMIT TRANSACTION;')
-        except sqlite3.OperationalError as error:
+        except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
-            raise error
+            raise e
 
     def add_from_screener(self, quotes):
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
             for quote in quotes:
                 quote['unix_time'] = unix_time()
-                rows = self.cursor.execute('SELECT symbol FROM funds WHERE symbol = :symbol', quote)
+                rows = self.cursor.execute('SELECT symbol FROM funds WHERE symbol = :symbol;', quote)
                 if rows.fetchone():
                     self.cursor.execute('''UPDATE funds
                     SET
@@ -290,15 +295,17 @@ class DB:
                     );''', quote)
                 self.cursor.execute('UPDATE funds SET lastScreened = :unix_time WHERE :symbol = symbol;', quote)
             self.cursor.execute('COMMIT TRANSACTION;')
-        except sqlite3.OperationalError as error:
+        except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
-            raise error
+            raise e
 
     def update_from_yh_finance(self, data):
+        print(data)
+
         self.cursor.execute('BEGIN TRANSACTION;')
         data['unix_time'] = unix_time()
         try:
-            rows = self.cursor.execute('SELECT symbol FROM funds WHERE symbol = :symbol', data)
+            rows = self.cursor.execute('SELECT symbol FROM funds WHERE symbol = :symbol;', data)
             if rows.fetchone():
                 self.cursor.execute('''UPDATE funds
                 SET
@@ -321,7 +328,7 @@ class DB:
             else:
                 raise sqlite3.OperationalError(f'symbol {data["symbol"]} is not in the database.')
             self.cursor.execute('DELETE FROM annualTotalReturns WHERE :symbol = symbol;', data)
-            for single_return in data['annualTotalReturns']:
+            for single_return in data['returns']:
                 single_return['symbol'] = data['symbol']
                 self.cursor.execute('INSERT OR IGNORE INTO annualTotalReturns VALUES (:symbol, :year, :annualValue);',
                                     single_return)
@@ -330,15 +337,15 @@ class DB:
                                     {'symbol': data['symbol'], 'brokerage': brokerage})
             self.cursor.execute('UPDATE funds SET yhFinanceLastAcquired = :unix_time WHERE :symbol = symbol;', data)
             self.cursor.execute('COMMIT TRANSACTION;')
-        except sqlite3.OperationalError as error:
+        except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
-            raise error
+            raise e
 
     def update_from_ms_finance(self, data):
         self.cursor.execute('BEGIN TRANSACTION;')
         data['unix_time'] = unix_time()
         try:
-            rows = self.cursor.execute('SELECT symbol FROM funds WHERE symbol = :symbol', data)
+            rows = self.cursor.execute('SELECT symbol FROM funds WHERE symbol = :symbol;', data)
             if rows.fetchone():
                 self.cursor.execute('''UPDATE funds
                 SET
@@ -348,15 +355,15 @@ class DB:
                 raise sqlite3.OperationalError(f'symbol {data["symbol"]} is not in the database.')
             self.cursor.execute('UPDATE funds SET msFinanceLastAcquired = :unix_time WHERE :symbol = symbol;', data)
             self.cursor.execute('COMMIT TRANSACTION;')
-        except sqlite3.OperationalError as error:
+        except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
-            raise error
+            raise e
 
     def update_performance_id(self, data):
         self.cursor.execute('BEGIN TRANSACTION;')
         data['unix_time'] = unix_time()
         try:
-            rows = self.cursor.execute('SELECT symbol FROM funds WHERE symbol = :symbol', data)
+            rows = self.cursor.execute('SELECT symbol FROM funds WHERE symbol = :symbol;', data)
             if rows.fetchone():
                 self.cursor.execute('''UPDATE funds
                 SET
@@ -365,35 +372,43 @@ class DB:
             else:
                 raise sqlite3.OperationalError(f'symbol {data["symbol"]} is not in the database.')
             self.cursor.execute('COMMIT TRANSACTION;')
-        except sqlite3.OperationalError as error:
+        except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
-            raise error
+            raise e
 
     def valid_for_yh_finance_view(self) -> set:
         sql = '''
-        SELECT symbol FROM funds WHERE yhFinanceLastAcquired IS NULL OR yhFinanceLastAcquired <= :lastMonthEpoch
+        SELECT symbol FROM funds WHERE yhFinanceLastAcquired IS NULL OR yhFinanceLastAcquired <= :lastMonthEpoch;
         '''
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
             selection = self.cursor.execute(sql, {'lastMonthEpoch': get_last_month_epoch_ms()}).fetchall()
             self.cursor.execute('COMMIT TRANSACTION;')
-        except sqlite3.OperationalError as error:
+        except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
-            raise error
+            raise e
         return set(selection) & self.valid_funds()
 
     def valid_for_ms_finance_view(self) -> set:
         sql = '''
-        SELECT performanceId FROM funds WHERE (msFinanceLastAcquired IS NULL OR msFinanceLastAcquired <= :lastMonthEpoch) AND performanceId IS NOT NULL
+        SELECT symbol, performanceId FROM funds WHERE (msFinanceLastAcquired IS NULL OR msFinanceLastAcquired <= :lastMonthEpoch) AND performanceId IS NOT NULL;
         '''
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
             selection = self.cursor.execute(sql, {'lastMonthEpoch': get_last_month_epoch_ms()}).fetchall()
             self.cursor.execute('COMMIT TRANSACTION;')
-        except sqlite3.OperationalError as error:
+        except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
-            raise error
-        return set(selection) & self.valid_funds()
+            raise e
+        selection_symbols = set()
+        for symbol, _ in selection:
+            selection_symbols.add(symbol)
+        valid_symbols = selection_symbols & self.valid_funds()
+        return_perf_ids = set()
+        for symbol, performance_id in selection:
+            if symbol in valid_symbols:
+                return_perf_ids.add(performance_id)
+        return return_perf_ids
 
     def valid_for_perf_id_view(self) -> set:
         sql = '''
@@ -403,9 +418,9 @@ class DB:
         try:
             selection = self.cursor.execute(sql).fetchall()
             self.cursor.execute('COMMIT TRANSACTION;')
-        except sqlite3.OperationalError as error:
+        except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
-            raise error
+            raise e
         return set(selection) & self.valid_funds()
 
     def valid_funds(self) -> set:
@@ -416,6 +431,9 @@ class DB:
         }
         sql = '''
             SELECT symbol FROM funds WHERE 
+                REGEXP(symbol, '^[a-zA-Z]*') AND
+                longName IS NOT NULL AND
+                firstTradeDateMilliseconds IS NOT NULL AND
                 firstTradeDateMilliseconds < :epoch_ms_ten_years AND
                 market = "us_market" AND (
                     yhFinanceLastAcquired IS NULL OR
@@ -430,29 +448,49 @@ class DB:
                     msFinanceLastAcquired IS NULL OR
                     msFinanceLastAcquired <= :lastMonthEpoch OR 
                     starRating > 3
+                ) AND (
+                    quoteType != 'MUTUALFUND' OR (
+                        EXISTS(SELECT * FROM brokerages WHERE symbol = symbol AND brokerage LIKE 'LPL SWM%')
+                    )
                 );
             '''
+        test_sql = '''SELECT * FROM brokerages WHERE REGEXP(brokerage, 'LPL SWM.*') ORDER BY brokerage;'''
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
             selection = self.cursor.execute(sql, data).fetchall()
             self.cursor.execute('COMMIT TRANSACTION;')
-        except sqlite3.OperationalError as error:
+        except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
-            raise error
-        return set(selection)
+            raise e
+        return_selection = set()
+        for item in selection:
+            return_selection.add(item[0])
+        return return_selection
 
     def delete_unscreened(self):
         sql = '''
-        DELETE FROM funds WHERE lastScreened <= :lastMonthEpoch
+        DELETE FROM funds WHERE lastScreened <= :lastMonthEpoch;
         '''
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
-            selection = self.cursor.execute(sql, {'lastMonthEpoch': get_last_month_epoch_ms()}).fetchall()
+            self.cursor.execute(sql, {'lastMonthEpoch': get_last_month_epoch_ms()})
             self.cursor.execute('COMMIT TRANSACTION;')
-        except sqlite3.OperationalError as error:
+        except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
-            raise error
-        return selection
+            raise e
+
+    def delete_fund(self, symbol):
+        sql = '''
+        DELETE FROM funds WHERE symbol = :symbol;
+        '''
+        self.cursor.execute('BEGIN TRANSACTION;')
+        try:
+            self.cursor.execute(sql, {'symbol': symbol})
+            self.cursor.execute('COMMIT TRANSACTION;')
+        except Exception as e:
+            self.cursor.execute('ROLLBACK TRANSACTION;')
+            raise e
+
 
 
 def db_start(testing=False):
@@ -479,5 +517,7 @@ def get_epoch_from_ms(days=0, months=0, years=0):
     return int(today.timestamp() * 1000)
 
 if __name__ == '__main__':
+    db = DB()
+    print(db.valid_funds())
     print(get_last_month_epoch_ms())
     print(get_epoch_from_ms(years=10))

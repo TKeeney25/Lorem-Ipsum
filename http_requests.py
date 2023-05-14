@@ -58,20 +58,20 @@ def get_screen(quote_type: str, offset: int, payload: json):
     return validate_response(request("POST", url, json=payload, headers=YH_HEADERS, params=querystring))
 
 
-def get_yh_info(symbol: str) -> dict:
+def get_yh_info(symbol: str):
     url = "https://yh-finance.p.rapidapi.com/stock/v2/get-summary"
     querystring = {"symbol": symbol, "region": "US"}
     return validate_response(request("GET", url, headers=YH_HEADERS, params=querystring))
 
-def get_perf_id(symbol: str) -> dict:
+def get_perf_id(symbol: str):
     url = "https://ms-finance.p.rapidapi.com/market/v2/auto-complete"
     querystring = {"q": symbol}
-    return validate_response(request("GET", url, headers=MS_HEADERS, params=querystring))[0]
+    return validate_response(request("GET", url, headers=MS_HEADERS, params=querystring))
 
-def get_ms_info(performance_id: str) -> dict:
+def get_ms_info(performance_id: str):
     url = "https://ms-finance.p.rapidapi.com/stock/get-detail"
     querystring = {"PerformanceId": performance_id}
-    return validate_response(request("GET", url, headers=MS_HEADERS, params=querystring))[0]
+    return validate_response(request("GET", url, headers=MS_HEADERS, params=querystring))
 
 
 def validate_response(response):
