@@ -1,6 +1,9 @@
 from typing import Optional
 
 
+# TODO add list structure
+# TODO add dict structure
+
 class Response:
     def __init__(self, api_id, data):
         self.api_id = api_id
@@ -111,6 +114,7 @@ class ScreenerResponse(Response):
         for quote in data['quotes']:
             self.quotes.append(Quote(quote))
 
+
 class Quote(Response):
     def __init__(self, data):
         super().__init__('Quotes', data)
@@ -131,6 +135,7 @@ class Quote(Response):
         self.sharesOutstanding = IntegerResponse('sharesOutstanding', data)
         self.tradeable = TextResponse('tradeable', data)
         self.triggerable = TextResponse('triggerable', data)
+
 
 class PerformanceIdResponse(Response):
     def __init__(self, data):
@@ -178,7 +183,7 @@ class DefaultKeyStatistics(Response):
         self.beta3Year = RealResponse('beta3Year', self.data)
         self.totalAssets = IntegerResponse('totalAssets', self.data)
         self.fundFamily = TextResponse('fundFamily', self.data)
-        self.percent_yield = RealResponse('yield', self.data)  # TODO deal with ramifications of name change
+        self.percent_yield = RealResponse('yield', self.data)
         self.category = TextResponse('category', self.data)
 
 

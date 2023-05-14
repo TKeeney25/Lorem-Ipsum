@@ -1,10 +1,10 @@
 import datetime
 import re
-
 from dateutil.relativedelta import *
 import sqlite3
 import time
 
+# region SQL Strings
 CREATE_FUNDS_TABLE = '''
 CREATE TABLE IF NOT EXISTS funds (
     symbol TEXT NOT NULL,
@@ -75,132 +75,13 @@ CREATE TABLE IF NOT EXISTS brokerages (
 
 DROP_BROKERAGES_TABLE = '''DROP TABLE IF EXISTS brokerages;'''
 
-ADD_FROM_SCREENER = ['''
-IF (:symbol IN (SELECT symbol FROM funds)
-    THEN
-        UPDATE funds
-        SET
-            longName = :longName,
-            quoteType = :quoteType,
-            firstTradeDateMilliseconds = :firstTradeDateMilliseconds,
-            exchange = :exchange,
-            market = :market,
-            marketCap = :marketCap,
-            marketState = :marketState,
-            priceHint = :priceHint,
-            priceToBook = :priceToBook,
-            regularMarketChange = :regularMarketChange,
-            regularMarketChangePercent = :regularMarketChangePercent,
-            regularMarketPreviousClose = :regularMarketPreviousClose,
-            regularMarketPrice = :regularMarketPrice,
-            sharesOutstanding = :sharesOutstanding,
-            tradeable = :tradeable,
-            triggerable = :triggerable
-        WHERE :symbol = symbol;
-    ELSE
-        INSERT INTO funds (
-            symbol,
-            longName,
-            quoteType,
-            firstTradeDateMilliseconds,
-            exchange,
-            market,
-            marketCap,
-            marketState,
-            priceHint,
-            priceToBook,
-            regularMarketChange,
-            regularMarketChangePercent,
-            regularMarketPreviousClose,
-            regularMarketPrice,
-            sharesOutstanding,
-            tradeable,
-            triggerable,
-        ) VALUES (
-            :symbol,
-            :longName,
-            :quoteType,
-            :firstTradeDateMilliseconds,
-            :exchange,
-            :market,
-            :marketCap,
-            :marketState,
-            :priceHint,
-            :priceToBook,
-            :regularMarketChange,
-            :regularMarketChangePercent,
-            :regularMarketPreviousClose,
-            :regularMarketPrice,
-            :sharesOutstanding,
-            :tradeable,
-            :triggerable
-        );
-    END IF;''',
-                     'UPDATE funds SET lastScreened = GETDATE() WHERE :symbol = symbol;']
 
-UPDATE_FROM_YH_FINANCE = '''
-BEGIN TRANSACTION;
-IF (:symbol IN (SELECT symbol FROM funds)
-    THEN
-        UPDATE funds
-        SET
-            ytd = :ytd,
-            lastBearMkt = :lastBearMkt,
-            lastBullMkt = :lastBullMkt,
-            oneMonth = :oneMonth,
-            threeMonth = :threeMonth,
-            oneYear = :oneYear,
-            threeYear = :threeYear,
-            fiveYear = :fiveYear,
-            beta3Year = :beta3Year,
-            category = :category,
-            totalAssets = :totalAssets,
-            fundFamily = :fundFamily,
-            yield = :yield,
-            yhFinanceLastAcquired = GETDATE())
-        WHERE :symbol = symbol;
-    END IF;
-COMMIT TRANSACTION;
-'''
+# endregion
 
-ADD_ANNUALTOTALRETURN = '''
-BEGIN TRANSACTION;
-IF (EXISTS (SELECT * FROM annualTotalReturns WHERE :symbol = symbol AND :year = year))
-    THEN
-        UPDATE annualTotalReturns
-        SET
-            return = :return
-        WHERE :symbol = symbol AND :year = year;
-    ELSE
-        INSERT INTO annualTotalReturns VALUES (
-            :symbol,
-            :year,
-            :return
-        );
-    END IF;
-COMMIT TRANSACTION;
-'''
-
-UPDATE_FROM_MS_FINANCE = '''
-BEGIN TRANSACTION;
-IF (:symbol IN (SELECT symbol FROM funds)
-    THEN
-        UPDATE funds
-        SET
-            performanceId = :performanceId,
-            starRating = :starRating
-        WHERE :symbol = symbol;
-    END IF;
-COMMIT TRANSACTION;
-'''
-
-def functionRegex(value, pattern):
-    c_pattern = re.compile(pattern.lower())
-    return c_pattern.search(fr'\b{value.lower()}\b') is not None
 class DB:
     def __init__(self, dbname='tickerTracker.db'):
         self.connection = sqlite3.connect(dbname)
-        self.connection.create_function('REGEXP', 2, functionRegex)
+        self.connection.create_function('REGEXP', 2, function_regex)
         self.cursor = self.connection.cursor()
 
     def close_connections(self):
@@ -387,11 +268,15 @@ class DB:
         except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
             raise e
-        return set(selection) & self.valid_funds()
+        selection_set = set()
+        for select in selection:
+            selection_set.add(select[0])
+        return selection_set & self.valid_funds()
 
     def valid_for_ms_finance_view(self) -> set:
         sql = '''
-        SELECT symbol, performanceId FROM funds WHERE (msFinanceLastAcquired IS NULL OR msFinanceLastAcquired <= :lastMonthEpoch) AND performanceId IS NOT NULL;
+        SELECT symbol, performanceId FROM funds WHERE
+        (msFinanceLastAcquired IS NULL OR msFinanceLastAcquired <= :lastMonthEpoch) AND performanceId IS NOT NULL;
         '''
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
@@ -421,7 +306,10 @@ class DB:
         except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
             raise e
-        return set(selection) & self.valid_funds()
+        selection_set = set()
+        for select in selection:
+            selection_set.add(select[0])
+        return selection_set & self.valid_funds()
 
     def valid_funds(self) -> set:
         # TODO add dynamic filter recognition (1 filter file that automatically filters from screen, yh, & ms)
@@ -454,7 +342,6 @@ class DB:
                     )
                 );
             '''
-        test_sql = '''SELECT * FROM brokerages WHERE REGEXP(brokerage, 'LPL SWM.*') ORDER BY brokerage;'''
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
             selection = self.cursor.execute(sql, data).fetchall()
@@ -491,14 +378,20 @@ class DB:
             self.cursor.execute('ROLLBACK TRANSACTION;')
             raise e
 
+    # TODO figure out how to route all db functions through this in a non-complicated manner
+    def execute_transaction(self, *args):
+        self.cursor.execute('BEGIN TRANSACTION;')
+        try:
+            for arg in args:
+                self.cursor.execute(*arg)
+            self.cursor.execute('COMMIT TRANSACTION;')
+        except Exception as e:
+            self.cursor.execute('ROLLBACK TRANSACTION;')
+            raise e
 
-
-def db_start(testing=False):
-    if testing:
-        db = DB(':memory:')
-    else:
-        db = DB()
-    return db
+def function_regex(value, pattern):
+    c_pattern = re.compile(pattern.lower())
+    return c_pattern.search(fr'\b{value.lower()}\b') is not None
 
 
 def unix_time():
@@ -515,6 +408,7 @@ def get_last_month_epoch_ms():
 def get_epoch_from_ms(days=0, months=0, years=0):
     today = datetime.datetime.today() - relativedelta(years=years, months=months, days=days)
     return int(today.timestamp() * 1000)
+
 
 if __name__ == '__main__':
     db = DB()
