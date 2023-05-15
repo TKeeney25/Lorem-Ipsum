@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 
 
@@ -29,13 +30,6 @@ class Response:
                     return_dict.update(all_vars[var].to_dict())
                 else:
                     return_dict[var] = all_vars[var].to_dict()
-            elif isinstance(all_vars[var], list):
-                return_dict[var] = []
-                for v in all_vars[var]:
-                    if isinstance(v, Response):
-                        return_dict[var].append(v.to_dict())
-                    else:
-                        return_dict[var].append(v)
             else:
                 if len(all_vars) == 1:
                     return all_vars[var]
@@ -62,7 +56,9 @@ class IntegerResponse(DataResponse):
             return None
         if isinstance(self.data, dict) and 'raw' in self.data:
             self.data = self.data['raw']
-        if not isinstance(self.data, int):
+        try:
+            self.data = int(self.data)
+        except TypeError:
             self.data = None
 
 
@@ -93,6 +89,30 @@ class TextResponse(DataResponse):
         self.data = str(self.data)
 
 
+class ListResponse(DataResponse):
+    def __init__(self, api_id, data, data_function=None):
+        super().__init__(api_id, data)
+        self.data_function = data_function
+        self.get_list()
+
+    def get_list(self):
+        if self.data is None or self.data_function is None:
+            return None
+        new_data = []
+        for item in self.data:
+            new_data.append(self.data_function(item))
+        self.data = new_data
+
+    def to_dict(self):
+        data_set = []
+        for entry in self.data:
+            if isinstance(entry, Response):
+                data_set.append(entry.to_dict())
+            else:
+                data_set.append(entry)
+        return data_set
+
+
 class MSTickerResponse(TextResponse):
     def __init__(self, api_id, data):
         super().__init__(api_id, data)
@@ -110,9 +130,7 @@ class ScreenerResponse(Response):
         self.start = IntegerResponse('start', data)
         self.count = IntegerResponse('count', data)
         self.total = IntegerResponse('total', data)
-        self.quotes = []
-        for quote in data['quotes']:
-            self.quotes.append(Quote(quote))
+        self.quotes = ListResponse('quotes', data, Quote)
 
 
 class Quote(Response):
@@ -212,9 +230,7 @@ class FundProfile(Response):
     def __init__(self, data):
         super().__init__('fundProfile', data)
         self.feesExpensesInvestment = FeesExpensesInvestment(self.data)
-        self.brokerages = []
-        for brokerage in self.data['brokerages']:
-            self.brokerages.append(brokerage)
+        self.brokerages = ListResponse('brokerages', self.data)
 
 
 class FeesExpensesInvestment(Response):
@@ -226,9 +242,20 @@ class FeesExpensesInvestment(Response):
 class AnnualTotalReturns(Response):
     def __init__(self, data):
         super().__init__('annualTotalReturns', data)
-        returns = self.data['returns']
-        for single_return in self.data['returns']:
-            single_return['annualValue'] = RealResponse('annualValue', single_return).data
-        self.returns = returns
+        self.returns = ListResponse('returns', self.data, AnnualReturn)
+
+
+class AnnualReturn(Response):
+    def __init__(self, data):
+        super().__init__('Returns', data)
+        self.annualValue = RealResponse('annualValue', self.data)
+        self.year = IntegerResponse('year', self.data)
+
 
 # endregion
+
+if __name__ == '__main__':
+    print(ScreenerResponse(json.load(open('./tests/defaults/screen_data.json'))).to_dict())
+    print(YHFinanceResponse(json.load(open('./tests/defaults/yh_get_summary.json'))).to_dict())
+    print(MSFinanceResponse(json.load(open('./tests/defaults/ms_get_detail.json'))[0]).to_dict())
+    print(PerformanceIdResponse(json.load(open('./tests/defaults/perf_id_data.json'))['results'][0]).to_dict())

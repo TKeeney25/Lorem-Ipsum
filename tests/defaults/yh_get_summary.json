@@ -73,7 +73,7 @@
     "categoryName": "Technology",
     "initAipInvestment": {},
     "subseqIraInvestment": {},
-    "brokerages": [],
+    "brokerages": ["LPL SWM"],
     "managementInfo": {
       "managerName": null,
       "managerBio": null,

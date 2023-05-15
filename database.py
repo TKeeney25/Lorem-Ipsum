@@ -4,6 +4,8 @@ from dateutil.relativedelta import *
 import sqlite3
 import time
 
+import utils
+
 # region SQL Strings
 CREATE_FUNDS_TABLE = '''
 CREATE TABLE IF NOT EXISTS funds (
@@ -317,31 +319,7 @@ class DB:
             'epoch_ms_ten_years': get_epoch_from_ms(years=10),
             'lastMonthEpoch': get_last_month_epoch_ms()
         }
-        sql = '''
-            SELECT symbol FROM funds WHERE 
-                REGEXP(symbol, '^[a-zA-Z]*') AND
-                longName IS NOT NULL AND
-                firstTradeDateMilliseconds IS NOT NULL AND
-                firstTradeDateMilliseconds < :epoch_ms_ten_years AND
-                market = "us_market" AND (
-                    yhFinanceLastAcquired IS NULL OR
-                    yhFinanceLastAcquired <= :lastMonthEpoch OR (
-                        tenYear > 0 AND
-                        fiveYear > 0 AND
-                        threeYear > 0 AND
-                        oneYear > 0 AND
-                        (twelveBOne IS NULL OR twelveBOne = 0)
-                    )
-                ) AND (
-                    msFinanceLastAcquired IS NULL OR
-                    msFinanceLastAcquired <= :lastMonthEpoch OR 
-                    starRating > 3
-                ) AND (
-                    quoteType != 'MUTUALFUND' OR (
-                        EXISTS(SELECT * FROM brokerages WHERE symbol = symbol AND brokerage LIKE 'LPL SWM%')
-                    )
-                );
-            '''
+        sql = utils.valid_funds
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
             selection = self.cursor.execute(sql, data).fetchall()
@@ -378,16 +356,6 @@ class DB:
             self.cursor.execute('ROLLBACK TRANSACTION;')
             raise e
 
-    # TODO figure out how to route all db functions through this in a non-complicated manner
-    def execute_transaction(self, *args):
-        self.cursor.execute('BEGIN TRANSACTION;')
-        try:
-            for arg in args:
-                self.cursor.execute(*arg)
-            self.cursor.execute('COMMIT TRANSACTION;')
-        except Exception as e:
-            self.cursor.execute('ROLLBACK TRANSACTION;')
-            raise e
 
 def function_regex(value, pattern):
     c_pattern = re.compile(pattern.lower())
