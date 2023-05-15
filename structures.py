@@ -255,7 +255,7 @@ class AnnualReturn(Response):
 # endregion
 
 if __name__ == '__main__':
-    print(ScreenerResponse(json.load(open('./tests/defaults/screen_data.json'))).to_dict())
-    print(YHFinanceResponse(json.load(open('./tests/defaults/yh_get_summary.json'))).to_dict())
-    print(MSFinanceResponse(json.load(open('./tests/defaults/ms_get_detail.json'))[0]).to_dict())
-    print(PerformanceIdResponse(json.load(open('./tests/defaults/perf_id_data.json'))['results'][0]).to_dict())
+    # (ScreenerResponse(json.load(open('./tests/defaults/screen_data.json'))).to_dict())
+    print('err' in YHFinanceResponse(json.load(open('./tests/defaults/yh_bad_data.json'))).defaultKeyStatistics.data)
+    # print(MSFinanceResponse(json.load(open('./tests/defaults/ms_get_detail.json'))[0]).to_dict())
+    # print(PerformanceIdResponse(json.load(open('./tests/defaults/perf_id_data.json'))['results'][0]).to_dict())

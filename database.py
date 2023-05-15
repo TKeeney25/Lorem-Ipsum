@@ -93,6 +93,7 @@ class DB:
     def create_tables(self):
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
+            self.cursor.execute('PRAGMA foreign_keys = ON;')
             self.cursor.execute(CREATE_FUNDS_TABLE)
             self.cursor.execute(CREATE_ANNUALTOTALRETURNS_TABLE)
             self.cursor.execute(CREATE_BROKERAGES_TABLE)
@@ -183,8 +184,6 @@ class DB:
             raise e
 
     def update_from_yh_finance(self, data):
-        print(data)
-
         self.cursor.execute('BEGIN TRANSACTION;')
         data['unix_time'] = unix_time()
         try:
@@ -344,13 +343,20 @@ class DB:
             self.cursor.execute('ROLLBACK TRANSACTION;')
             raise e
 
-    def delete_fund(self, symbol):
-        sql = '''
-        DELETE FROM funds WHERE symbol = :symbol;
-        '''
+    def delete_fund(self, symbol, perf_id):
+        if symbol:
+            sql = '''
+            DELETE FROM funds WHERE symbol = :symbol;
+            '''
+        elif perf_id:
+            sql = '''
+            DELETE FROM funds WHERE performanceId = :performanceId;
+            '''
+        else:
+            raise Exception('Bad Input to Delete Fund')
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
-            self.cursor.execute(sql, {'symbol': symbol})
+            self.cursor.execute(sql, {'symbol': symbol, 'performanceId': perf_id})
             self.cursor.execute('COMMIT TRANSACTION;')
         except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
@@ -380,6 +386,11 @@ def get_epoch_from_ms(days=0, months=0, years=0):
 
 if __name__ == '__main__':
     db = DB()
-    print(db.valid_funds())
-    print(get_last_month_epoch_ms())
-    print(get_epoch_from_ms(years=10))
+    print(db.valid_for_perf_id_view())
+    if db.cursor.execute('SELECT symbol FROM funds WHERE symbol = :symbol;', {'symbol': 'EMM'}).fetchone():
+        print('a')
+    print(db.cursor.execute('SELECT symbol FROM funds WHERE symbol = :symbol;', {'symbol': 'EMM'}).fetchone())
+    #db.delete_fund('EMM')
+    #print(db.valid_funds())
+    #print(get_last_month_epoch_ms())
+    #print(get_epoch_from_ms(years=10))

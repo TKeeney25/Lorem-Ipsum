@@ -1,0 +1,243 @@
+{
+  "defaultKeyStatistics": {
+    "err": true
+  },
+  "fundProfile": {
+    "err": true
+  },
+  "financialsTemplate": {},
+  "topHoldings": {
+    "err": true
+  },
+  "price": {
+    "quoteSourceName": "Delayed Quote",
+    "regularMarketOpen": {
+      "raw": 13.18,
+      "fmt": "13.18"
+    },
+    "averageDailyVolume3Month": {
+      "raw": 218,
+      "fmt": "218",
+      "longFmt": "218"
+    },
+    "exchange": "PNK",
+    "regularMarketTime": 1683639002,
+    "volume24Hr": {},
+    "regularMarketDayHigh": {
+      "raw": 13.18,
+      "fmt": "13.18"
+    },
+    "shortName": "PURPOSE SILVER BULLION FUND ETF",
+    "averageDailyVolume10Day": {
+      "raw": 160,
+      "fmt": "160",
+      "longFmt": "160"
+    },
+    "longName": "Purpose Silver Bullion Fund",
+    "regularMarketChange": {
+      "raw": 0,
+      "fmt": "0.00"
+    },
+    "currencySymbol": "$",
+    "regularMarketPreviousClose": {
+      "raw": 13.18,
+      "fmt": "13.18"
+    },
+    "preMarketPrice": {},
+    "exchangeDataDelayedBy": 0,
+    "toCurrency": null,
+    "postMarketChange": {},
+    "postMarketPrice": {},
+    "exchangeName": "Other OTC",
+    "preMarketChange": {},
+    "circulatingSupply": {},
+    "regularMarketDayLow": {
+      "raw": 13.18,
+      "fmt": "13.18"
+    },
+    "priceHint": {
+      "raw": 2,
+      "fmt": "2",
+      "longFmt": "2"
+    },
+    "currency": "USD",
+    "regularMarketPrice": {
+      "raw": 13.18,
+      "fmt": "13.18"
+    },
+    "regularMarketVolume": {
+      "raw": 520,
+      "fmt": "520.00",
+      "longFmt": "520.00"
+    },
+    "lastMarket": null,
+    "regularMarketSource": "DELAYED",
+    "openInterest": {},
+    "marketState": "PREPRE",
+    "underlyingSymbol": null,
+    "marketCap": {},
+    "quoteType": "ETF",
+    "volumeAllCurrencies": {},
+    "strikePrice": {},
+    "symbol": "SVRZF",
+    "maxAge": 1,
+    "fromCurrency": null,
+    "regularMarketChangePercent": {
+      "raw": 0,
+      "fmt": "0.00%"
+    }
+  },
+  "fundPerformance": {
+    "err": true
+  },
+  "quoteType": {
+    "exchange": "PNK",
+    "shortName": "PURPOSE SILVER BULLION FUND ETF",
+    "longName": "Purpose Silver Bullion Fund",
+    "exchangeTimezoneName": "America/New_York",
+    "exchangeTimezoneShortName": "EDT",
+    "isEsgPopulated": false,
+    "gmtOffSetMilliseconds": "-14400000",
+    "quoteType": "ETF",
+    "symbol": "SVRZF",
+    "messageBoardId": "finmb_60035961",
+    "market": "us_market"
+  },
+  "summaryDetail": {
+    "previousClose": {
+      "raw": 13.18,
+      "fmt": "13.18"
+    },
+    "regularMarketOpen": {
+      "raw": 13.18,
+      "fmt": "13.18"
+    },
+    "twoHundredDayAverage": {
+      "raw": 11.6326,
+      "fmt": "11.63"
+    },
+    "trailingAnnualDividendYield": {},
+    "payoutRatio": {},
+    "volume24Hr": {},
+    "regularMarketDayHigh": {
+      "raw": 13.18,
+      "fmt": "13.18"
+    },
+    "navPrice": {},
+    "averageDailyVolume10Day": {
+      "raw": 160,
+      "fmt": "160",
+      "longFmt": "160"
+    },
+    "totalAssets": {},
+    "regularMarketPreviousClose": {
+      "raw": 13.18,
+      "fmt": "13.18"
+    },
+    "fiftyDayAverage": {
+      "raw": 12.6016,
+      "fmt": "12.60"
+    },
+    "trailingAnnualDividendRate": {},
+    "open": {
+      "raw": 13.18,
+      "fmt": "13.18"
+    },
+    "toCurrency": null,
+    "averageVolume10days": {
+      "raw": 160,
+      "fmt": "160",
+      "longFmt": "160"
+    },
+    "expireDate": {},
+    "yield": {},
+    "algorithm": null,
+    "dividendRate": {},
+    "exDividendDate": {},
+    "beta": {},
+    "circulatingSupply": {},
+    "startDate": {},
+    "regularMarketDayLow": {
+      "raw": 13.18,
+      "fmt": "13.18"
+    },
+    "priceHint": {
+      "raw": 2,
+      "fmt": "2",
+      "longFmt": "2"
+    },
+    "currency": "USD",
+    "regularMarketVolume": {
+      "raw": 520,
+      "fmt": "520",
+      "longFmt": "520"
+    },
+    "lastMarket": null,
+    "maxSupply": {},
+    "openInterest": {},
+    "marketCap": {},
+    "volumeAllCurrencies": {},
+    "strikePrice": {},
+    "averageVolume": {
+      "raw": 218,
+      "fmt": "218",
+      "longFmt": "218"
+    },
+    "priceToSalesTrailing12Months": {},
+    "dayLow": {
+      "raw": 13.18,
+      "fmt": "13.18"
+    },
+    "ask": {
+      "raw": 0,
+      "fmt": "0.00"
+    },
+    "ytdReturn": {},
+    "askSize": {
+      "raw": 0,
+      "fmt": null,
+      "longFmt": "0"
+    },
+    "volume": {
+      "raw": 520,
+      "fmt": "520",
+      "longFmt": "520"
+    },
+    "fiftyTwoWeekHigh": {
+      "raw": 13.64,
+      "fmt": "13.64"
+    },
+    "forwardPE": {},
+    "maxAge": 1,
+    "fromCurrency": null,
+    "fiveYearAvgDividendYield": {},
+    "fiftyTwoWeekLow": {
+      "raw": 9.5,
+      "fmt": "9.50"
+    },
+    "bid": {
+      "raw": 0,
+      "fmt": "0.00"
+    },
+    "tradeable": false,
+    "dividendYield": {},
+    "bidSize": {
+      "raw": 0,
+      "fmt": null,
+      "longFmt": "0"
+    },
+    "dayHigh": {
+      "raw": 13.18,
+      "fmt": "13.18"
+    },
+    "coinMarketCapLink": null
+  },
+  "symbol": "SVRZF",
+  "assetProfile": {
+    "err": true
+  },
+  "esgScores": {
+    "err": true
+  },
+  "pageViews": {}
+}

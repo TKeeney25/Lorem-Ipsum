@@ -1,8 +1,11 @@
 import json
-from requests import request
+
+import requests
 
 import utils
 from utils import logger
+
+TIMEOUT = 30
 
 YH_HEADERS = {
     'content-type': "application/json",
@@ -50,37 +53,46 @@ def btwn_payload(floor: float, roof: float) -> json:
 
 # endregion
 
-def get_screen(quote_type: str, offset: int, payload: json):
+def get_screen(session: requests.Session, quote_type: str, offset: int, payload: json):
     url = "https://yh-finance.p.rapidapi.com/screeners/list"
     querystring = {"quoteType": quote_type, "sortField": "intradayprice", "region": "US", "size": "50",
                    "offset": offset,
                    "sortType": "ASC"}
-    return validate_response(request("POST", url, json=payload, headers=YH_HEADERS, params=querystring))
+    return validate_response(session.post(url, json=payload, headers=YH_HEADERS, params=querystring, timeout=TIMEOUT))
 
 
-def get_yh_info(symbol: str):
+def get_yh_info(session: requests.Session, symbol: str):
     url = "https://yh-finance.p.rapidapi.com/stock/v2/get-summary"
     querystring = {"symbol": symbol, "region": "US"}
-    return validate_response(request("GET", url, headers=YH_HEADERS, params=querystring))
+    return validate_response(session.get(url, headers=YH_HEADERS, params=querystring, timeout=TIMEOUT))
 
-def get_perf_id(symbol: str):
+
+def get_perf_id(session: requests.Session, symbol: str):
     url = "https://ms-finance.p.rapidapi.com/market/v2/auto-complete"
     querystring = {"q": symbol}
-    return validate_response(request("GET", url, headers=MS_HEADERS, params=querystring))
+    return validate_response(session.get(url, headers=MS_HEADERS, params=querystring, timeout=TIMEOUT))
 
-def get_ms_info(performance_id: str):
+
+def get_ms_info(session: requests.Session, performance_id: str):
     url = "https://ms-finance.p.rapidapi.com/stock/get-detail"
     querystring = {"PerformanceId": performance_id}
-    return validate_response(request("GET", url, headers=MS_HEADERS, params=querystring))
+    return validate_response(session.get(url, headers=MS_HEADERS, params=querystring, timeout=TIMEOUT))
 
 
 def validate_response(response):
     try:
-        if not response.ok:
-            raise Exception(response.text)
-        json_response = json.loads(response.text)
+        response.raise_for_status()
+        json_response = response.json()
         if json_response:
             return json_response
+        else:
+            return -1
     except Exception as e:
         logger.exception(f'{response.headers}, {e}')
         return None
+
+
+if __name__ == '__main__':
+    test_session = requests.Session()
+    print((test_session, '0P0001LD1Y'))
+    # print(get_perf_id(('UNL',)))

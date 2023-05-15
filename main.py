@@ -2,6 +2,8 @@ import threading
 from queue import Queue, PriorityQueue
 from time import sleep
 
+import requests
+
 import database
 import utils
 from utils import logger
@@ -49,32 +51,10 @@ class DataTree:
 def update_api_calls(access_controllers):
     for controller in access_controllers:
         with controller.api_calls_remaining_lock:
-            controller.api_calls_remaining = 4
-            controller.api_calls_remaining_condition.notify(4)
+            controller.api_calls_remaining = 1
+            controller.api_calls_remaining_condition.notify()
     if not program_ended:
-        threading.Timer(1, update_api_calls, (access_controllers,)).start()
-
-
-def screen_fund(screen_type: str, offset: int, floor: int, roof=None, updater=True) -> {}:
-    global yh_screen_dynamic_total
-
-    if roof is None:
-        payload = gt_payload(floor)
-    else:
-        payload = btwn_payload(floor, roof)
-
-    screen_data = get_screen(screen_type, offset, payload)
-    if screen_data is None:
-        return None
-    screener_response = ScreenerResponse(screen_data)
-
-    if updater:
-        yh_screen_dynamic_total_lock.acquire()
-        yh_screen_dynamic_total = screener_response.to_dict()['total']
-        yh_screen_dynamic_total_update_event.set()
-        yh_screen_dynamic_total_lock.release()
-
-    return screener_response
+        threading.Timer(.25, update_api_calls, (access_controllers,)).start()
 
 
 class ApiAccessController:
@@ -86,23 +66,31 @@ class ApiAccessController:
         self.failures_lock = threading.Lock()
 
 
-def worker_thread(name, work_queue: PriorityQueue, db_queue: Queue, api_access_controller: ApiAccessController):
+def worker_thread(
+        name,
+        work_queue: PriorityQueue,
+        db_queue: Queue,
+        api_access_controller: ApiAccessController,
+        session: requests.Session):
     while True:
-        with api_access_controller.api_calls_remaining_lock:
-            while api_access_controller.api_calls_remaining <= 0:
-                api_access_controller.api_calls_remaining_condition.wait()
-            api_access_controller.api_calls_remaining -= 1
-        priority, content = work_queue.get()
-        method, args = content
-        if method is None:
-            work_queue.task_done()
-            return
         try:
             sleep(DEFAULT_DELAYS[api_access_controller.failures // MAX_WORKERS])
         except IndexError:
             print(f'Too many errors occurred in {name}. Aborting.')
             logger.exception(f'Too many errors occurred in {name}. Aborting.')
-        method_return = method(*args)
+
+        priority, content = work_queue.get()
+        method, args = content
+        if method is None:
+            work_queue.task_done()
+            session.close()
+            logger.debug('Thread Complete.')
+            return
+        with api_access_controller.api_calls_remaining_lock:
+            while api_access_controller.api_calls_remaining <= 0:
+                api_access_controller.api_calls_remaining_condition.wait()
+            api_access_controller.api_calls_remaining -= 1
+        method_return = method(*args, session=session)
         if method_return is None:
             with api_access_controller.failures_lock:
                 api_access_controller.failures += 1
@@ -126,90 +114,125 @@ def screen_master(data_tree: DataTree):
     global yh_screen_dynamic_total
     if utils.progress['screen_state'] == utils.STATE_FINISHED:
         data_tree.incomplete = False
+        logger.debug('Screen Complete')
         return
 
-    for screen_state in [utils.STATE_MUTUAL_FUND, utils.STATE_ETF]:
-        if utils.progress['screen_state'] == screen_state:
-            current_floor = utils.progress['floor']
-            starting_offset = utils.progress['offset']
-        elif screen_state == utils.STATE_MUTUAL_FUND and utils.progress['screen_state'] == utils.STATE_ETF:
-            continue
-        else:
-            current_floor = DEFAULT_FLOOR
-            starting_offset = 0
+    with requests.Session() as session:
+        for screen_state in [utils.STATE_MUTUAL_FUND, utils.STATE_ETF]:
+            if utils.progress['screen_state'] == screen_state:
+                logger.debug('Picking up from left off.')
+                current_floor = utils.progress['floor']
+                starting_offset = utils.progress['offset']
+            elif screen_state == utils.STATE_MUTUAL_FUND and utils.progress['screen_state'] == utils.STATE_ETF:
+                logger.debug('Skipping Mutual Funds.')
+                continue
+            else:
+                current_floor = DEFAULT_FLOOR
+                starting_offset = 0
 
-        utils.progress['screen_state'] = screen_state
+            utils.progress['screen_state'] = screen_state
 
-        remaining_total = MAX_TOTAL + 1
-        while remaining_total > MAX_TOTAL:
-            current_roof = current_floor + DEFAULT_JUMP
-            screen_result = screen_fund(screen_state, starting_offset, current_floor)
-            screen_result_dict = screen_result.to_dict()
-            remaining_total = screen_result_dict['total']
-            remaining_total = 249  # TODO only leave in place for testing
+            remaining_total = MAX_TOTAL + 1
+            while remaining_total > MAX_TOTAL:
+                current_roof = current_floor + DEFAULT_JUMP
+                screen_result = screen_fund(screen_state, starting_offset, current_floor, session=session)
+                screen_result_dict = screen_result.to_dict()
+                remaining_total = screen_result_dict['total']
+                remaining_total = 249  # TODO only leave in place for testing
 
-            db_write_queue.put(screen_result)
+                db_write_queue.put(screen_result)
 
-            yh_screen_dynamic_total_lock.acquire()
-            yh_screen_dynamic_total = remaining_total
-            yh_screen_dynamic_total_lock.release()
-
-            utils.progress['floor'] = current_floor
-
-            yh_screen_dynamic_total_update_event.set()
-            for bottom_offset in range(starting_offset, MAX_TOTAL, 50 * MAX_WORKERS):
-                utils.progress['offset'] = bottom_offset
-                utils.dump_progress()
-
-                yh_screen_dynamic_total_update_event.wait()
-                yh_screen_dynamic_total_update_event.clear()
                 yh_screen_dynamic_total_lock.acquire()
-                yh_screen_dynamic_total = 249  # TODO only leave in place for testing
-                print(f'{bottom_offset}/{yh_screen_dynamic_total}:{remaining_total}')
-                if yh_screen_dynamic_total > MAX_TOTAL:
-                    current_roof = drop_roof(current_floor, current_roof)
+                yh_screen_dynamic_total = remaining_total
+                yh_screen_dynamic_total_lock.release()
 
-                if bottom_offset > yh_screen_dynamic_total:
-                    yh_screen_dynamic_total_lock.release()
-                    break
-                else:
-                    yh_screen_dynamic_total_lock.release()
+                utils.progress['floor'] = current_floor
 
-                for offset_mod in range(0, 50 * MAX_WORKERS, 50):
-                    logger.debug(
-                        f'''yh_queue.put:screen_fund:{screen_state}:{bottom_offset + offset_mod}:{current_floor}
-                        :{current_roof}:{offset_mod == 0}''')
-                    yh_queue.put((SCREEN_PRIORITY, (screen_fund, (
-                        screen_state, bottom_offset + offset_mod, current_floor, current_roof, offset_mod == 0
-                    ))))
-            current_floor = current_roof
-            starting_offset = 0
+                yh_screen_dynamic_total_update_event.set()
+                for bottom_offset in range(starting_offset, MAX_TOTAL, MAX_RESULTS * MAX_WORKERS):
+                    utils.progress['offset'] = bottom_offset
+                    utils.dump_progress()
+
+                    yh_screen_dynamic_total_update_event.wait()
+                    yh_screen_dynamic_total_update_event.clear()
+                    yh_screen_dynamic_total_lock.acquire()
+                    yh_screen_dynamic_total = 249  # TODO only leave in place for testing
+                    logger.debug(f'{bottom_offset}/{yh_screen_dynamic_total}:{remaining_total}')
+                    if yh_screen_dynamic_total > MAX_TOTAL:
+                        current_roof = drop_roof(current_floor, current_roof)
+
+                    if bottom_offset > yh_screen_dynamic_total:
+                        yh_screen_dynamic_total_lock.release()
+                        break
+                    else:
+                        yh_screen_dynamic_total_lock.release()
+
+                    for offset_mod in range(0, MAX_RESULTS * MAX_WORKERS, MAX_RESULTS):
+                        logger.debug(
+                            f'''yh_queue.put:screen_fund:{screen_state}:{bottom_offset + offset_mod}:{current_floor}
+                            :{current_roof}:{offset_mod == 0}''')
+                        yh_queue.put((SCREEN_PRIORITY, (screen_fund, (
+                            screen_state, bottom_offset + offset_mod, current_floor, current_roof, offset_mod == 0
+                        ))))
+                current_floor = current_roof
+                starting_offset = 0
     utils.progress['screen_state'] = utils.STATE_FINISHED
     utils.dump_progress()
     data_tree.incomplete = False
+    logger.debug('Screen Complete')
 
 
 class BadFund:
-    def __init__(self, symbol):
+    def __init__(self, symbol=None, perf_id=None):
+        logger.debug(f'Symbol/Perf_id {symbol}/{perf_id} is bad.')
         self.symbol = symbol
+        self.perf_id = perf_id
 
     def __str__(self):
         return self.symbol
 
 
-def fetch_yh_fund(fund):
-    data = get_yh_info(fund)
+def screen_fund(screen_type: str, offset: int, floor: int, roof=None, updater=True, **kwargs) -> {}:
+    global yh_screen_dynamic_total
+    session = kwargs['session']
+    if roof is None:
+        payload = gt_payload(floor)
+    else:
+        payload = btwn_payload(floor, roof)
+
+    screen_data = get_screen(session, screen_type, offset, payload)
+    if screen_data is None:
+        return None
+    screener_response = ScreenerResponse(screen_data)
+
+    if updater:
+        yh_screen_dynamic_total_lock.acquire()
+        yh_screen_dynamic_total = screener_response.to_dict()['total']
+        yh_screen_dynamic_total_update_event.set()
+        yh_screen_dynamic_total_lock.release()
+
+    return screener_response
+
+
+def fetch_yh_fund(fund, **kwargs):
+    session = kwargs['session']
+    data = get_yh_info(session, fund)
     if data is None:
         return None
+
     try:
-        return YHFinanceResponse(data)
+        yh_finance_response = YHFinanceResponse(data)
+        if 'err' in yh_finance_response.defaultKeyStatistics.data:
+            return BadFund(symbol=fund)
+        return yh_finance_response
     except KeyError:
         logger.debug(data)
-        return BadFund(fund)
+        return BadFund(symbol=fund)
 
 
-def fetch_perf_id(fund):
-    data = get_perf_id(fund)
+def fetch_perf_id(fund, **kwargs):
+    session = kwargs['session']
+    data = get_perf_id(session, fund)
     if data is None:
         return None
     result = None
@@ -218,22 +241,24 @@ def fetch_perf_id(fund):
             result = entry
             break
     if result is None:
-        return BadFund(fund)
+        return BadFund(symbol=fund)
     return PerformanceIdResponse(result)
 
 
-def fetch_ms_fund(fund):
-    data = get_ms_info(fund)
+def fetch_ms_fund(fund, **kwargs):
+    session = kwargs['session']
+    data = get_ms_info(session, fund)
     if data is None:
         return None
+    if data == -1 or 'symbol' not in data[0]:
+        return BadFund(perf_id=fund)
     return MSFinanceResponse(data[0])
 
 
 def master_thread(queue: PriorityQueue, priority: float, data_source: DataTree, worker):
     already_queued = set()
-    final_check = True
-    while data_source.parent.incomplete or final_check:
-        final_check = data_source.parent.incomplete
+    data = [1]
+    while data_source.parent.incomplete or len(data) > 0:
         data_source.event.wait()
         data = data_source.data
         data_source.event.clear()
@@ -247,6 +272,7 @@ def master_thread(queue: PriorityQueue, priority: float, data_source: DataTree, 
             queue.put((DEATH_PRIORITY, (None, None)))
         queue.join()
     data_source.incomplete = False
+    logger.debug(f'Thread Complete.')
 
 
 def manage_db(data_trees):
@@ -259,16 +285,20 @@ def manage_db(data_trees):
                 if not tree.event.is_set():
                     if tree.data_source == 'yh':
                         tree.data = db.valid_for_yh_finance_view()
+                        tree.event.set()
                     elif tree.data_source == 'perf':
                         tree.data = db.valid_for_perf_id_view()
+                        tree.event.set()
                     elif tree.data_source == 'ms':
                         tree.data = db.valid_for_ms_finance_view()
-                    tree.event.set()
+                        tree.event.set()
             while not db_write_queue.empty():
                 write_queue_value = db_write_queue.get()
                 if write_queue_value is None:
                     db_write_queue.task_done()
+                    db.delete_unscreened()
                     db.close_connections()
+                    logger.debug('DB Thread is complete.')
                     return
                 if isinstance(write_queue_value, ScreenerResponse):
                     db.add_from_screener(write_queue_value.to_dict()['quotes'])
@@ -279,26 +309,23 @@ def manage_db(data_trees):
                 elif isinstance(write_queue_value, MSFinanceResponse):
                     db.update_from_ms_finance(write_queue_value.to_dict())
                 elif isinstance(write_queue_value, BadFund):
-                    logger.error(f'Bad Fund: {write_queue_value.symbol}')
-                    db.delete_fund(write_queue_value.symbol)
+                    logger.debug(f'Bad Fund: {write_queue_value.symbol}/{write_queue_value.perf_id}')
+                    db.delete_fund(write_queue_value.symbol, write_queue_value.perf_id)
                 db_write_queue.task_done()
         except Exception as e:
-            print(e)
             logger.exception(f'Value: {write_queue_value}, Exception: {e}')
-            sleep(1)
 
 
 def debug_aid(*args):
-    print_str = ''
+    print_str = 'Threads Status: '
     for arg in args:
         print_str += f'|{arg.name}, {arg.is_alive()}|'
-    print(print_str)
+    logger.debug(print_str)
     if not program_ended:
-        threading.Timer(5, debug_aid, args).start()
+        threading.Timer(30, debug_aid, args).start()
 
 
 def main():
-    # debug_aid(db_thread, *threads)
     global program_ended
     screen_data_tree = DataTree()
     yh_data_tree = DataTree(screen_data_tree, 'yh')
@@ -324,13 +351,14 @@ def main():
         threads += [
             threading.Thread(target=worker_thread,
                              name=f'yh_worker_{i}',
-                             args=(f'yh_worker_{i}', yh_queue, db_write_queue, yh_access_control)),
+                             args=(f'yh_worker_{i}', yh_queue, db_write_queue, yh_access_control, requests.Session())),
             threading.Thread(target=worker_thread,
                              name=f'ms_worker_{i}',
-                             args=(f'ms_worker_{i}', ms_queue, db_write_queue, ms_access_control))
+                             args=(f'ms_worker_{i}', ms_queue, db_write_queue, ms_access_control, requests.Session()))
         ]
 
     update_api_calls([yh_access_control, ms_access_control])
+    debug_aid(db_thread, *threads)
     db_thread.start()
     for thread in threads:
         thread.start()
@@ -343,4 +371,5 @@ def main():
 
 
 if __name__ == '__main__':
+    logger.debug('Starting New Run------------------------------------------')
     main()
