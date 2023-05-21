@@ -18,7 +18,8 @@ _DEFAULT_SETTINGS = {"api_key": "",
                      "send_debug": [""],
                      "send_start": [""],
                      "send_complete": [""],
-                     "last_month_ran": -1
+                     "last_month_ran": -1,
+                     "headers": [""]
                      }
 
 STATE_READY = 'READY'
@@ -35,9 +36,16 @@ _DEFAULT_PROGRESS = {"screen_state": "READY",
                      }
 
 VALID_FUNDS_FILE = DATA_DIR + '/valid_funds.sql'
+OUTPUT_FUNDS_FILE = DATA_DIR + '/output_funds.sql'
+
+TICKERS_FILE = DATA_DIR + '/tickers.csv'
 
 _MAKE_DIRS = [LOG_DIR, DATA_DIR]
-_MAKE_FILES = [(SETTINGS_FILE, _DEFAULT_SETTINGS), (PROGRESS_FILE, _DEFAULT_PROGRESS), (VALID_FUNDS_FILE, None)]
+_MAKE_FILES = [(SETTINGS_FILE, _DEFAULT_SETTINGS),
+               (PROGRESS_FILE, _DEFAULT_PROGRESS),
+               (VALID_FUNDS_FILE, None),
+               (OUTPUT_FUNDS_FILE, None),
+               (TICKERS_FILE, None)]
 
 for make_dir in _MAKE_DIRS:
     if not os.path.exists(make_dir):
@@ -58,6 +66,9 @@ with open(PROGRESS_FILE) as progress_file:
 
 with open(VALID_FUNDS_FILE) as valid_funds_file:
     valid_funds = valid_funds_file.read()
+
+with open(OUTPUT_FUNDS_FILE) as output_funds_file:
+    output_funds = output_funds_file.read()
 
 
 def dump_progress():

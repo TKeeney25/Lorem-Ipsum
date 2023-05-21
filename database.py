@@ -331,6 +331,23 @@ class DB:
             return_selection.add(item[0])
         return return_selection
 
+    def csv_data(self):
+        data = {
+            'epoch_ms_ten_years': get_epoch_from_ms(years=10),
+            'lastMonthEpoch': get_last_month_epoch_ms(),
+            'tenYearsAgo': get_ten_years_ago()
+        }
+        valid_funds_sql = utils.valid_funds
+        sql = utils.output_funds.format(valid_funds_sql=valid_funds_sql)
+        self.cursor.execute('BEGIN TRANSACTION;')
+        try:
+            selection = self.cursor.execute(sql, data).fetchall()
+            self.cursor.execute('COMMIT TRANSACTION;')
+        except Exception as e:
+            self.cursor.execute('ROLLBACK TRANSACTION;')
+            raise e
+        return selection
+
     def delete_unscreened(self):
         sql = '''
         DELETE FROM funds WHERE lastScreened <= :lastMonthEpoch;
@@ -384,6 +401,10 @@ def get_epoch_from_ms(days=0, months=0, years=0):
     return int(today.timestamp() * 1000)
 
 
+def get_ten_years_ago():
+    return datetime.datetime.today().year - 10
+
+
 if __name__ == '__main__':
     db = DB()
     print(db.valid_for_perf_id_view())
@@ -391,3 +412,7 @@ if __name__ == '__main__':
     print(db.valid_for_yh_finance_view())
     print(get_last_month_epoch_ms())
     print(get_epoch_from_ms(years=10))
+    print(db.csv_data())
+    print(db.cursor.execute('select * from funds limit 10'))
+    print([description[0] for description in db.cursor.description])
+    db.close_connections()

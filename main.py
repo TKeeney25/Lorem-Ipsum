@@ -1,3 +1,4 @@
+import csv
 import threading
 from queue import Queue, PriorityQueue
 from time import sleep
@@ -426,7 +427,12 @@ def main() -> bool:
     program_ended = True
     if success:
         db = database.DB()
-        # TODO
+        csv_data = db.csv_data()
+        with open('tickers.csv', 'w', newline='') as output_csv:
+            writer = csv.writer(output_csv)
+            writer.writerow(utils.settings['headers'])
+            for row in csv_data:
+                writer.writerow(row)
     return success
 
 
