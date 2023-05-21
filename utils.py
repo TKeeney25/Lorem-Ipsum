@@ -1,3 +1,4 @@
+import datetime
 import logging
 from logging.handlers import RotatingFileHandler
 import os
@@ -8,7 +9,17 @@ LOG_FILE = LOG_DIR + '/app.log'
 
 DATA_DIR = r'./data'
 SETTINGS_FILE = DATA_DIR + '/settings.json'
-_DEFAULT_SETTINGS = {"api_key": "", "log_type": "DEBUG"}
+_DEFAULT_SETTINGS = {"api_key": "",
+                     "log_type": "DEBUG",
+                     "max_ms_calls": 50000,
+                     "max_yh_calls": 50000,
+                     "gmail_secret": "",
+                     "from": "",
+                     "send_debug": [""],
+                     "send_start": [""],
+                     "send_complete": [""],
+                     "last_month_ran": -1
+                     }
 
 STATE_READY = 'READY'
 STATE_MUTUAL_FUND = 'MUTUAL_FUND'
@@ -16,7 +27,12 @@ STATE_ETF = 'ETF'
 STATE_FINISHED = 'FINISHED'
 
 PROGRESS_FILE = DATA_DIR + '/progress.json'
-_DEFAULT_PROGRESS = {"screen_state": "READY", "offset": 0, "floor": -1}
+_DEFAULT_PROGRESS = {"screen_state": "READY",
+                     "offset": 0,
+                     "floor": -1,
+                     "yh_api_calls": 0,
+                     "ms_api_calls": 0
+                     }
 
 VALID_FUNDS_FILE = DATA_DIR + '/valid_funds.sql'
 
@@ -32,7 +48,7 @@ for make_file in _MAKE_FILES:
         with open(file, 'a+') as new_file:
             if defaults is None:
                 continue
-            json.dump(defaults, new_file)
+            json.dump(defaults, new_file, indent=4)
 
 with open(SETTINGS_FILE) as settings_file:
     settings = json.load(settings_file)
@@ -46,7 +62,17 @@ with open(VALID_FUNDS_FILE) as valid_funds_file:
 
 def dump_progress():
     with open(PROGRESS_FILE, 'w') as progress_file:
-        json.dump(progress, progress_file)
+        json.dump(progress, progress_file, indent=4)
+
+def dump_settings():
+    with open(SETTINGS_FILE, 'w') as settings_file:
+        json.dump(settings, settings_file, indent=4)
+
+
+def reset_progress():
+    global progress
+    progress = _DEFAULT_PROGRESS
+    dump_progress()
 
 
 logFormatter = logging.Formatter(fmt='%(asctime)s:%(threadName)s:%(levelname)s: %(message)s')
@@ -57,6 +83,11 @@ logger.setLevel(logging.getLevelNamesMapping()[settings['log_type']])
 handler = RotatingFileHandler(LOG_FILE, maxBytes=1024 * 1024, backupCount=50)
 handler.setFormatter(logFormatter)
 logger.addHandler(handler)
+
+if settings['last_month_ran'] != datetime.datetime.today().month:
+    reset_progress()
+    settings['last_month_ran'] = datetime.datetime.today().month
+    dump_settings()
 
 if __name__ == '__main__':
     pass

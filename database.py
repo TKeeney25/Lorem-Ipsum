@@ -387,10 +387,7 @@ def get_epoch_from_ms(days=0, months=0, years=0):
 if __name__ == '__main__':
     db = DB()
     print(db.valid_for_perf_id_view())
-    if db.cursor.execute('SELECT symbol FROM funds WHERE symbol = :symbol;', {'symbol': 'EMM'}).fetchone():
-        print('a')
-    print(db.cursor.execute('SELECT symbol FROM funds WHERE symbol = :symbol;', {'symbol': 'EMM'}).fetchone())
-    #db.delete_fund('EMM')
-    #print(db.valid_funds())
-    #print(get_last_month_epoch_ms())
-    #print(get_epoch_from_ms(years=10))
+    print(db.valid_for_ms_finance_view())
+    print(db.valid_for_yh_finance_view())
+    print(get_last_month_epoch_ms())
+    print(get_epoch_from_ms(years=10))
