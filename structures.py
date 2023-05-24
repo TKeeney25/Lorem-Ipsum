@@ -2,9 +2,6 @@ import json
 from typing import Optional
 
 
-# TODO add list structure
-# TODO add dict structure
-
 class Response:
     def __init__(self, api_id, data):
         self.api_id = api_id
@@ -181,6 +178,15 @@ class Detail(Response):
     def __init__(self, data):
         super().__init__('Detail', data)
         self.starRating = IntegerResponse('StarRating', self.data)
+
+
+# endregion
+
+# region MS Trailing Returns. TODO
+class MSTrailingReturnsResponse(Response):
+    def __init__(self, data):
+        super().__init__('main', data)
+        pass
 
 
 # endregion

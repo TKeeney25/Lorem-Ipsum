@@ -2,6 +2,7 @@ import csv
 import threading
 from queue import Queue, PriorityQueue
 from time import sleep
+import argparse
 
 import requests
 
@@ -374,7 +375,7 @@ def debug_aid(*args):
         threading.Timer(30, debug_aid, args).start()
 
 
-def main() -> bool:
+def ticker_tracker() -> bool:
     global program_ended, unchecked_exceptions
     success = True
     screen_data_tree = DataTree()
@@ -436,8 +437,41 @@ def main() -> bool:
     return success
 
 
+def fund_finder() -> bool:
+    yh_access_control = ApiAccessController()
+    ms_access_control = ApiAccessController()
+
+    threads = []
+    for i in range(0, MAX_WORKERS):
+        threads += [
+            threading.Thread(target=worker_thread,
+                             name=f'yh_worker_{i}',
+                             args=(f'yh_worker_{i}', yh_queue, db_write_queue, yh_access_control, requests.Session())),
+            threading.Thread(target=worker_thread,
+                             name=f'ms_worker_{i}',
+                             args=(f'ms_worker_{i}', ms_queue, db_write_queue, ms_access_control, requests.Session()))
+        ]
+
+
+def handle_args():
+    modes = ['screen', 'fetch']
+    parser = argparse.ArgumentParser(
+        prog='TickerTracker',
+        description='Obtains useful information from Yahoo Finance and Morningstar',
+    )
+    parser.add_argument('-m', '--mode', choices=modes, required=True, help='select the mode')
+
+    args = parser.parse_args()
+
+    if modes[0] == args.mode:
+        mail.start_email()
+        logger.debug('Starting New Screen Run------------------------------------------')
+        if ticker_tracker():
+            mail.complete_email()
+    elif modes[1] == args.mode:
+        logger.debug('Starting New Fetch Run------------------------------------------')
+        fund_finder()
+
+
 if __name__ == '__main__':
-    mail.start_email()
-    logger.debug('Starting New Run------------------------------------------')
-    if main():
-        mail.complete_email()
+    handle_args()
