@@ -36,7 +36,6 @@ def update_bearer():
 
 def get_trailing_returns(performance_id):
     url = f'https://www.us-api.morningstar.com/sal/sal-service/fund/trailingReturn/v2/{performance_id}/data'
-
     payload = {
         'duration': 'daily',
         'currency': None,
