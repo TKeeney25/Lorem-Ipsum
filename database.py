@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS funds (
     threeYear REAL,
     fiveYear REAL,
     tenYear REAL,
+    fifteenYear REAL,
+    inception REAL,
     beta3Year REAL,
     bookValue REAL,
     category TEXT,
@@ -112,6 +114,22 @@ class DB:
         except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
             raise e
+
+    def add_fund(self, fund):
+        sql = '''
+        INSERT OR IGNORE INTO funds (symbol) VALUES (:symbol);
+        '''
+        self.cursor.execute('BEGIN TRANSACTION;')
+        try:
+            selection = self.cursor.execute(sql, {'symbol': fund}).fetchall()
+            self.cursor.execute('COMMIT TRANSACTION;')
+        except Exception as e:
+            self.cursor.execute('ROLLBACK TRANSACTION;')
+            raise e
+        selection_set = set()
+        for select in selection:
+            selection_set.add(select[0])
+        return selection_set
 
     def add_from_screener(self, quotes):
         self.cursor.execute('BEGIN TRANSACTION;')
@@ -241,6 +259,30 @@ class DB:
             self.cursor.execute('ROLLBACK TRANSACTION;')
             raise e
 
+    def update_from_ms_trailing_returns(self, data):
+
+        self.cursor.execute('BEGIN TRANSACTION;')
+        try:
+            rows = self.cursor.execute('SELECT symbol FROM funds WHERE performanceId = :fund;', data)
+            if rows.fetchone():
+                self.cursor.execute('''UPDATE funds
+                SET
+                    ytd = :ytd,
+                    oneYear = :oneYear,
+                    threeYear = :threeYear,
+                    fiveYear = :fiveYear,
+                    tenYear = :tenYear,
+                    fifteenYear = :fifteenYear,
+                    inception = :inception,
+                    starRating = :starRating
+                WHERE :fund = performanceId;''', data)
+            else:
+                raise sqlite3.OperationalError(f'symbol {data["symbol"]} is not in the database.')
+            self.cursor.execute('COMMIT TRANSACTION;')
+        except Exception as e:
+            self.cursor.execute('ROLLBACK TRANSACTION;')
+            raise e
+
     def update_performance_id(self, data):
         self.cursor.execute('BEGIN TRANSACTION;')
         data['unix_time'] = unix_time()
@@ -297,6 +339,9 @@ class DB:
         return return_perf_ids
 
     def valid_for_perf_id_view(self) -> set:
+        return self.missing_perf_id_view() & self.valid_funds()
+
+    def missing_perf_id_view(self) -> set:
         sql = '''
         SELECT symbol FROM funds WHERE performanceId IS NULL;
         '''
@@ -310,7 +355,32 @@ class DB:
         selection_set = set()
         for select in selection:
             selection_set.add(select[0])
-        return selection_set & self.valid_funds()
+        return selection_set
+
+    def having_perf_id_view(self, **kwargs) -> set:
+        sql = '''
+        SELECT symbol, performanceId FROM funds WHERE performanceId IS NOT NULL;
+        '''
+        self.cursor.execute('BEGIN TRANSACTION;')
+        try:
+            selection = self.cursor.execute(sql).fetchall()
+            self.cursor.execute('COMMIT TRANSACTION;')
+        except Exception as e:
+            self.cursor.execute('ROLLBACK TRANSACTION;')
+            raise e
+        selection_set = set()
+        whitelist = None
+        if 'whitelist' in kwargs:
+            whitelist = kwargs['whitelist']
+        for select in selection:
+            if whitelist:
+                if select[0] not in whitelist:
+                    continue
+                selection_set.add(select[1])
+            else:
+                selection_set.add(select[0])
+        print(selection_set)
+        return selection_set
 
     def valid_funds(self) -> set:
         # TODO add dynamic filter recognition (1 filter file that automatically filters from screen, yh, & ms)
@@ -342,6 +412,20 @@ class DB:
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
             selection = self.cursor.execute(sql, data).fetchall()
+            self.cursor.execute('COMMIT TRANSACTION;')
+        except Exception as e:
+            self.cursor.execute('ROLLBACK TRANSACTION;')
+            raise e
+        return selection
+
+    def fund_data(self, symbol) -> []:
+        sql = '''
+        SELECT symbol, ytd, oneYear, threeYear, fiveYear, tenYear, fifteenYear, inception, starRating FROM funds WHERE
+            symbol = :symbol;
+        '''
+        self.cursor.execute('BEGIN TRANSACTION;')
+        try:
+            selection = self.cursor.execute(sql, {'symbol': symbol}).fetchone()
             self.cursor.execute('COMMIT TRANSACTION;')
         except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')

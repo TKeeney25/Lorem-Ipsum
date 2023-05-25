@@ -1,4 +1,3 @@
-import json
 from typing import Optional
 
 
@@ -39,8 +38,10 @@ class DataResponse(Response):
         self.api_id = api_id
         try:
             self.data = data[api_id]
-        except (KeyError, TypeError):
+        except KeyError:
             self.data = None
+        except TypeError:
+            self.data = data
 
 
 class IntegerResponse(DataResponse):
@@ -182,11 +183,52 @@ class Detail(Response):
 
 # endregion
 
-# region MS Trailing Returns. TODO
-class MSTrailingReturnsResponse(Response):
+# region MS Trailing Returns.
+class MSFundTrailingReturnsResponse(Response):
     def __init__(self, data):
         super().__init__('main', data)
-        pass
+        self.fund = TextResponse('fund', data)
+        self.columnDefs = ListResponse('columnDefs', data)
+        self.totalReturnNAV = ListResponse('totalReturnNAV', data)
+        temp_list = self.totalReturnNAV.to_dict()
+        self.oneDay = RealResponse('oneDay', temp_list[0])
+        self.oneWeek = RealResponse('oneWeek', temp_list[1])
+        self.oneMonth = RealResponse('oneMonth', temp_list[2])
+        self.threeMonth = RealResponse('threeMonth', temp_list[3])
+        self.ytd = RealResponse('ytd', temp_list[4])
+        self.oneYear = RealResponse('oneYear', temp_list[5])
+        self.threeYear = RealResponse('threeYear', temp_list[6])
+        self.fiveYear = RealResponse('fiveYear', temp_list[7])
+        self.tenYear = RealResponse('tenYear', temp_list[8])
+        self.fifteenYear = RealResponse('fifteenYear', temp_list[9])
+        self.inception = RealResponse('inception', temp_list[10])
+        self.returnDate = TextResponse('fundReturnDate', data)
+        self.ratingDate = TextResponse('ratingDate', data)
+        self.starRating = IntegerResponse('overallMorningstarRating', data)
+
+
+class MSStockTrailingReturnsResponse(Response):
+    def __init__(self, data):
+        super().__init__('main', data)
+        self.returnDate = TextResponse('returnDate', data)
+        self.fund = TextResponse('fund', data)
+        if 'trailingTotalReturnsList' in data and data['trailingTotalReturnsList']:
+            data = data['trailingTotalReturnsList'][0]
+        self.symbol = TextResponse('name', data)
+        self.oneDay = RealResponse('trailing1DayReturn', data)
+        self.oneWeek = RealResponse('trailing1WeekReturn', data)
+        self.oneMonth = RealResponse('trailing1MonthReturn', data)
+        self.threeMonth = RealResponse('trailing3MonthReturn', data)
+        self.sixMonth = RealResponse('trailing6MonthReturn', data)
+        self.ytd = RealResponse('trailingYearToDateReturn', data)
+        self.oneYear = RealResponse('trailing1YearReturn', data)
+        self.threeYear = RealResponse('trailing3YearReturn', data)
+        self.fiveYear = RealResponse('trailing5YearReturn', data)
+        self.tenYear = RealResponse('trailing10YearReturn', data)
+        self.fifteenYear = RealResponse('trailing15YearReturn', data)
+        self.inception = RealResponse('DNE', data)
+        self.starRating = IntegerResponse('DNE', data)
+
 
 
 # endregion
@@ -262,6 +304,8 @@ class AnnualReturn(Response):
 
 if __name__ == '__main__':
     # (ScreenerResponse(json.load(open('./tests/defaults/screen_data.json'))).to_dict())
-    print('err' in YHFinanceResponse(json.load(open('./tests/defaults/yh_bad_data.json'))).defaultKeyStatistics.data)
     # print(MSFinanceResponse(json.load(open('./tests/defaults/ms_get_detail.json'))[0]).to_dict())
     # print(PerformanceIdResponse(json.load(open('./tests/defaults/perf_id_data.json'))['results'][0]).to_dict())
+    # hlep = MSTrailingReturnsResponse(morningstar_scraper.get_trailing_returns('FOUSA069TK').json())
+    # print(hlep.to_dict())
+    pass

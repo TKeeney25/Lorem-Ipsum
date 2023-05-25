@@ -2,6 +2,8 @@ import re
 
 import requests
 
+from http_requests import validate_response, TIMEOUT
+
 HEADERS = {
     'accept': '*/*',
     'accept-encoding': 'gzip, deflate, br',
@@ -34,8 +36,21 @@ def update_bearer():
     search = re.search('(tokenMaaS:[\w\s]*\")(.*)(\")', response.text, re.IGNORECASE)
     session_bearer = 'Bearer ' + search.group(2)
 
-def get_trailing_returns(performance_id):
+
+def get_fund_trailing_returns(session: requests.Session, performance_id):
     url = f'https://www.us-api.morningstar.com/sal/sal-service/fund/trailingReturn/v2/{performance_id}/data'
+    return _get_trailing_returns(session, url)
+
+def get_etf_trailing_returns(session: requests.Session, performance_id):
+    url = f'https://www.us-api.morningstar.com/sal/sal-service/etf/trailingReturn/v2/{performance_id}/data'
+    return _get_trailing_returns(session, url)
+
+def get_stock_trailing_returns(session: requests.Session, performance_id):
+    url = f'https://www.us-api.morningstar.com/sal/sal-service/stock/trailingTotalReturns/{performance_id}/data'
+    return _get_trailing_returns(session, url)
+
+
+def _get_trailing_returns(session: requests.Session, url):
     payload = {
         'duration': 'daily',
         'currency': None,
@@ -48,15 +63,15 @@ def get_trailing_returns(performance_id):
         'version': '4.14.0',
     }
 
-    response = requests.get(url, headers=HEADERS | {'authorization': session_bearer}, params=payload)
-    return response
+    response = session.get(url, headers=HEADERS | {'authorization': session_bearer}, params=payload, timeout=10)
+    if response.status_code == 401:
+        update_bearer()
+    return validate_response(response)
 
 
 session_bearer = None
 update_bearer()
 if __name__ == '__main__':
-    response = get_trailing_returns('FOUSA069TK')
+    response = get_stock_trailing_returns(requests.session(), '0P0001L8C5')
+    response = get_etf_trailing_returns(requests.session(), 'FEUSA04AD2')
     print(response)
-    print(response.text)
-    url = 'https://api-global.morningstar.com/sal-service/v1/fund/trailingReturn/v2/FOUSA069TK/data'
-

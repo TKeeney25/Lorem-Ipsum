@@ -8,10 +8,12 @@ import requests
 
 import database
 import mail
+import morningstar_scraper
 import utils
 from utils import logger
 from http_requests import get_screen, gt_payload, btwn_payload, get_yh_info, get_perf_id, get_ms_info
-from structures import ScreenerResponse, MSFinanceResponse, YHFinanceResponse, PerformanceIdResponse
+from structures import ScreenerResponse, MSFinanceResponse, YHFinanceResponse, PerformanceIdResponse, \
+    MSFundTrailingReturnsResponse, MSStockTrailingReturnsResponse
 
 MAX_WORKERS = 5
 
@@ -47,7 +49,7 @@ program_ended = False
 
 
 class DataTree:
-    def __init__(self, parent=None, data_source=''):
+    def __init__(self, parent=None, data_source='', **kwargs):
         self.parent: [DataTree, None] = parent
         if parent is not None:
             parent.children.append(self)
@@ -56,6 +58,7 @@ class DataTree:
         self.data = []
         self.event = threading.Event()
         self.incomplete = True
+        self.kwargs = kwargs
 
 
 def update_api_calls(access_controllers):
@@ -210,6 +213,14 @@ class BadFund:
         return self.symbol
 
 
+class AddFund:
+    def __init__(self, symbol):
+        self.symbol = symbol
+
+    def __str__(self):
+        return self.symbol
+
+
 def screen_fund(screen_type: str, offset: int, floor: int, roof=None, updater=True, **kwargs) -> {}:
     global yh_screen_dynamic_total
     session = kwargs['session']
@@ -289,22 +300,47 @@ def fetch_ms_fund(fund, **kwargs):
     return MSFinanceResponse(data[0])
 
 
+def fetch_ms_trailing_returns(fund, **kwargs):
+    session = kwargs['session']
+    data = morningstar_scraper.get_stock_trailing_returns(session, fund)
+    if data is None:
+        logger.debug('None Stock')
+        return None
+    if not data['returnDate']:
+        data = morningstar_scraper.get_fund_trailing_returns(session, fund)
+        if data is None:
+            logger.debug('None Fund')
+            return None
+        data['fund'] = fund
+        logger.debug(data)
+        return MSFundTrailingReturnsResponse(data)
+    data['fund'] = fund
+    logger.debug(data)
+    return MSStockTrailingReturnsResponse(data)
+
+
 class MaxCallsExceededError(Exception):
     pass
 
 
-def master_thread(queue: PriorityQueue, priority: float, data_source: DataTree, worker):
+def master_thread(queue: PriorityQueue, priority: float, data_source: DataTree, worker, **kwargs):
+    has_whitelist = 'whitelist' in kwargs
+    if has_whitelist:
+        whitelist = kwargs['whitelist']
+    else:
+        whitelist = []
+
     try:
         already_queued = set()
         data = [1]
-        while data_source.parent.incomplete or len(data) > 0:
+        while (data_source.parent is not None and data_source.parent.incomplete) or len(data) > 0:
             if kill_event.is_set():
                 return
             data_source.event.wait()
             data = data_source.data
             data_source.event.clear()
             for entry in data:
-                if entry in already_queued:
+                if entry in already_queued or (has_whitelist and entry not in whitelist):
                     continue
                 already_queued.add(entry)
                 queue.put((priority, (worker, (entry,))))
@@ -337,6 +373,12 @@ def manage_db(data_trees):
                         elif tree.data_source == 'ms':
                             tree.data = db.valid_for_ms_finance_view()
                             tree.event.set()
+                        elif tree.data_source == 'missing_perf':
+                            tree.data = db.missing_perf_id_view()
+                            tree.event.set()
+                        elif tree.data_source == 'having_perf':
+                            tree.data = db.having_perf_id_view(**tree.kwargs['kwargs'])
+                            tree.event.set()
                 while not db_write_queue.empty():
                     write_queue_value = db_write_queue.get()
                     if write_queue_value is None:
@@ -353,6 +395,11 @@ def manage_db(data_trees):
                         db.update_performance_id(write_queue_value.to_dict())
                     elif isinstance(write_queue_value, MSFinanceResponse):
                         db.update_from_ms_finance(write_queue_value.to_dict())
+                    elif isinstance(write_queue_value, MSFundTrailingReturnsResponse) or \
+                            isinstance(write_queue_value, MSStockTrailingReturnsResponse):
+                        db.update_from_ms_trailing_returns(write_queue_value.to_dict())
+                    elif isinstance(write_queue_value, AddFund):
+                        db.add_fund(write_queue_value.symbol)
                     elif isinstance(write_queue_value, BadFund):
                         logger.debug(f'Bad Fund: {write_queue_value.symbol}/{write_queue_value.perf_id}')
                         db.delete_fund(write_queue_value.symbol, write_queue_value.perf_id)
@@ -437,41 +484,111 @@ def ticker_tracker() -> bool:
     return success
 
 
-def fund_finder() -> bool:
-    yh_access_control = ApiAccessController()
+def fund_finder(input_file, output_file) -> bool:
+    global program_ended, unchecked_exceptions
+    input_file_name = input_file.name
+    input_file.close()
+    with open(input_file_name) as input_file:
+        fund_list = csv.reader(input_file)
+        funds = set()
+        for fund in fund_list:
+            db_write_queue.put(AddFund(fund[0]))
+            funds.add(fund[0])
+    success = True
+    missing_perf_data_tree = DataTree(data_source='missing_perf')
+    having_perf_data_tree = DataTree(parent=missing_perf_data_tree,
+                                     data_source='having_perf',
+                                     kwargs={'whitelist': funds})
     ms_access_control = ApiAccessController()
 
-    threads = []
+    db_thread = threading.Thread(target=manage_db, name='db_master',
+                                 args=([missing_perf_data_tree, having_perf_data_tree],))
+
+    threads = [
+        threading.Thread(target=master_thread, name='missing_perf_data_master',
+                         args=(ms_queue, PERF_ID_PRIORITY, missing_perf_data_tree, fetch_perf_id),
+                         kwargs={'whitelist': funds}),
+        threading.Thread(target=master_thread, name='having_perf_data_master',
+                         args=(ms_queue, MS_PRIORITY, having_perf_data_tree, fetch_ms_trailing_returns))
+    ]
     for i in range(0, MAX_WORKERS):
         threads += [
-            threading.Thread(target=worker_thread,
-                             name=f'yh_worker_{i}',
-                             args=(f'yh_worker_{i}', yh_queue, db_write_queue, yh_access_control, requests.Session())),
             threading.Thread(target=worker_thread,
                              name=f'ms_worker_{i}',
                              args=(f'ms_worker_{i}', ms_queue, db_write_queue, ms_access_control, requests.Session()))
         ]
 
+    update_api_calls([ms_access_control])
+    debug_aid(db_thread, *threads)
+    db_thread.start()
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        while thread.is_alive():
+            thread.join(5)
+            if len(unchecked_exceptions) > 0:
+                kill_event.set()
+                program_ended = True
+                mail.debug_email(unchecked_exceptions)
+                unchecked_exceptions = []
+                success = False
+    db_write_queue.put(None)
+    db_thread.join()
+    program_ended = True
+    if success:
+        db = database.DB()
+        lists = [['symbol'],
+                 ['ytd'],
+                 ['oneYear'],
+                 ['threeYear'],
+                 ['fiveYear'],
+                 ['tenYear'],
+                 ['fifteenYear'],
+                 ['inception'],
+                 ['starRating']]
+        for fund in funds:
+            fund_data = db.fund_data(fund)
+            for i in range(len(lists)):
+                lists[i].append(fund_data[i])
+        output_file_name = output_file.name
+        output_file.close()
+        with open(output_file_name, 'w', newline='') as output_file:
+            writer = csv.writer(output_file)
+            for item in lists:
+                writer.writerow(item)
+    return success
+
 
 def handle_args():
-    modes = ['screen', 'fetch']
     parser = argparse.ArgumentParser(
         prog='TickerTracker',
         description='Obtains useful information from Yahoo Finance and Morningstar',
     )
-    parser.add_argument('-m', '--mode', choices=modes, required=True, help='select the mode')
+    subparsers = parser.add_subparsers(required=True, help='select a mode')
+    screen_parser = subparsers.add_parser('screen', help='"screen" help')
+    screen_parser.set_defaults(action=lambda: 'screen')
+    fetch_parser = subparsers.add_parser('fetch', help='"fetch" help')
+    fetch_parser.add_argument('-i', '--input',
+                              required=True,
+                              type=argparse.FileType('r'),
+                              help='select the input file')
+    fetch_parser.add_argument('-o', '--output',
+                              type=argparse.FileType('w'),
+                              default='./output.csv',
+                              help='output file name/directory')
+    fetch_parser.set_defaults(action=lambda: 'fetch')
 
     args = parser.parse_args()
-
-    if modes[0] == args.mode:
+    if 'screen' == args.action():
         mail.start_email()
         logger.debug('Starting New Screen Run------------------------------------------')
         if ticker_tracker():
             mail.complete_email()
-    elif modes[1] == args.mode:
+    elif 'fetch' == args.action():
         logger.debug('Starting New Fetch Run------------------------------------------')
-        fund_finder()
+        fund_finder(args.input, args.output)
 
 
 if __name__ == '__main__':
+    print(fetch_ms_trailing_returns('0P00002DCR', session=requests.session()).to_dict())
     handle_args()
