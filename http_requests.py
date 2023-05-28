@@ -94,5 +94,6 @@ def validate_response(response):
 
 if __name__ == '__main__':
     test_session = requests.Session()
-    print((test_session, '0P0001LD1Y'))
+    #print((test_session, '0P0001LD1Y'))
+    print(get_ms_info(test_session, '0P00009GX7'))
     # print(get_perf_id(('UNL',)))

@@ -1,8 +1,10 @@
 import csv
 import threading
+from dataclasses import field, dataclass
 from queue import Queue, PriorityQueue
 from time import sleep
 import argparse
+from typing import Any
 
 import requests
 
@@ -93,7 +95,11 @@ def worker_thread(
                 print(f'Too many errors occurred in {name}. Aborting.')
                 logger.exception(f'Too many errors occurred in {name}. Aborting.')
 
-            priority, content = work_queue.get()
+            obj: PrioritizedItem = work_queue.get()
+            priority = obj.priority
+            content = obj.item
+            logger.debug(f'P:{priority} C:{content}')
+            print(f'P:{priority} C:{content}')
             method, args = content
             if method is None:
                 work_queue.task_done()
@@ -104,7 +110,7 @@ def worker_thread(
                 while api_access_controller.api_calls_remaining <= 0:
                     api_access_controller.api_calls_remaining_condition.wait()
                 api_access_controller.api_calls_remaining -= 1
-            method_return = method(*args, session=session)
+            method_return = method(args, session=session)
             if method_return is None:
                 with api_access_controller.failures_lock:
                     api_access_controller.failures += 1
@@ -113,7 +119,7 @@ def worker_thread(
                             Failures: {api_access_controller.failures}.
                             Priority: {priority}.
                             Content: {content}.''')
-                    work_queue.put((priority + 1, content))
+                    work_queue.put(PrioritizedItem(priority + 1, content))
             else:
                 api_access_controller.failures = 0  # Race conditions do not matter
                 db_queue.put(method_return)
@@ -294,7 +300,7 @@ def fetch_ms_fund(fund, **kwargs):
     data = get_ms_info(session, fund)
     if data is None:
         return None
-    if data == -1 or 'symbol' not in data[0]:
+    if data == -1:
         return BadFund(perf_id=fund)
     with ms_api_calls_lock:
         utils.progress['ms_api_calls'] += 1
@@ -304,27 +310,42 @@ def fetch_ms_fund(fund, **kwargs):
 
 
 def fetch_ms_trailing_returns(fund, **kwargs):
+    perf_id = fund['perf_id']
+    share_id = fund['share_id']
+    quote_type = fund['quote_type']
     fund = fund['fund']
+
     session = kwargs['session']
-    data = morningstar_scraper.get_stock_trailing_returns(session, fund)
+
+    share_type = False
+    if quote_type == 'ETF':
+        data = morningstar_scraper.get_etf_trailing_returns(session, share_id)
+        share_type = True
+    elif quote_type == 'MUTUALFUND':
+        data = morningstar_scraper.get_fund_trailing_returns(session, share_id)
+        share_type = True
+    else:
+        data = morningstar_scraper.get_stock_trailing_returns(session, perf_id)
+
     if data is None:
-        logger.debug('None Stock')
         return None
-    if not data['returnDate']:
-        data = morningstar_scraper.get_fund_trailing_returns(session, fund)
-        if data is None:
-            logger.debug('None Fund')
-            return None
-        data['fund'] = fund
-        logger.debug(data)
-        return MSFundTrailingReturnsResponse(data)
+
     data['fund'] = fund
     logger.debug(data)
-    return MSStockTrailingReturnsResponse(data)
+    if share_type:
+        return MSFundTrailingReturnsResponse(data)
+    else:
+        return MSStockTrailingReturnsResponse(data)
 
 
 class MaxCallsExceededError(Exception):
     pass
+
+
+@dataclass(order=True)
+class PrioritizedItem:
+    priority: float
+    item: Any = field(compare=False)
 
 
 def master_thread(queue: PriorityQueue, priority: float, data_source: DataTree, worker, **kwargs):
@@ -336,26 +357,37 @@ def master_thread(queue: PriorityQueue, priority: float, data_source: DataTree, 
 
     try:
         already_queued = set()
-        data = {'funds': [1]}
-        while (data_source.parent is not None and data_source.parent.incomplete) or len(data['funds']) > 0:
+        do = True
+        while (data_source.parent is not None and data_source.parent.incomplete) or do:
+            do = False
             if kill_event.is_set():
                 return
             data_source.event.wait()
             data = data_source.data
             data_source.event.clear()
             for i in range(len(data['funds'])):
-                fund = data['funds'][i]
-                if 'performance_ids' in data:
+                fund = list(data['funds'])[i]
+                if 'performance_ids' in data.keys():
                     perf_id = data['performance_ids'][i]
                 else:
                     perf_id = None
+                if 'share_class_ids' in data.keys():
+                    share_id = data['share_class_ids'][i]
+                    quote_type = data['quote_types'][i]
+                else:
+                    share_id = None
+                    quote_type = None
                 if fund in already_queued or (has_whitelist and fund not in whitelist):
                     continue
+                do = True
                 already_queued.add(fund)
-                queue.put((priority, (worker, ({'fund': fund, 'perf_id': perf_id},))))
+                queue.put(PrioritizedItem(priority, (worker, {'fund': fund,
+                                                              'perf_id': perf_id,
+                                                              'share_id': share_id,
+                                                              'quote_type': quote_type})))
         if len(data_source.children) == 0:
             for _ in range(0, MAX_WORKERS):
-                queue.put((DEATH_PRIORITY, (None, None)))
+                queue.put(PrioritizedItem(DEATH_PRIORITY, (None, None)))
             queue.join()
         data_source.incomplete = False
         logger.debug(f'Thread Complete.')
@@ -479,6 +511,8 @@ def ticker_tracker() -> bool:
                 kill_event.set()
                 program_ended = True
                 utils.dump_progress()
+                for exception in unchecked_exceptions:
+                    logger.exception(repr(exception))
                 mail.debug_email(unchecked_exceptions)
                 unchecked_exceptions = []
                 success = False
@@ -565,7 +599,10 @@ def fund_finder(input_file, output_file) -> bool:
                  ['inception'],
                  ['starRating']]
         for fund in funds:
-            fund_data = db.fund_data(fund)
+            fund_data = db.fund_data_view(fund)
+            if fund_data is None:
+                fund_data = [fund, None, None, None, None, None, None, None, None]
+            print(fund_data)
             for i in range(len(lists)):
                 lists[i].append(fund_data[i])
         output_file_name = output_file.name
@@ -608,5 +645,5 @@ def handle_args():
 
 
 if __name__ == '__main__':
-    print(fetch_ms_trailing_returns('0P00002DCR', session=requests.session()).to_dict())
+    # print(fetch_ms_trailing_returns('0P00002DCR', session=requests.session()).to_dict())
     handle_args()

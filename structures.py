@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 
 
@@ -6,7 +7,7 @@ class Response:
         self.api_id = api_id
         try:
             self.data = data[api_id]
-        except KeyError:
+        except (KeyError, TypeError):
             self.data = data
 
     def __str__(self):
@@ -181,8 +182,6 @@ class MSFinanceResponse(Response):
         self.quoteType = type_name
 
 
-
-
 class Detail(Response):
     def __init__(self, data):
         super().__init__('Detail', data)
@@ -236,7 +235,6 @@ class MSStockTrailingReturnsResponse(Response):
         self.fifteenYear = RealResponse('trailing15YearReturn', data)
         self.inception = RealResponse('DNE', data)
         self.starRating = IntegerResponse('DNE', data)
-
 
 
 # endregion
@@ -312,7 +310,7 @@ class AnnualReturn(Response):
 
 if __name__ == '__main__':
     # (ScreenerResponse(json.load(open('./tests/defaults/screen_data.json'))).to_dict())
-    # print(MSFinanceResponse(json.load(open('./tests/defaults/ms_get_detail.json'))[0]).to_dict())
+    print(MSFinanceResponse(json.load(open('./tests/defaults/ms_get_detail.json'))[0]).to_dict())
     # print(PerformanceIdResponse(json.load(open('./tests/defaults/perf_id_data.json'))['results'][0]).to_dict())
     # hlep = MSTrailingReturnsResponse(morningstar_scraper.get_trailing_returns('FOUSA069TK').json())
     # print(hlep.to_dict())

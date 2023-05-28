@@ -266,7 +266,7 @@ class DB:
 
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
-            rows = self.cursor.execute('SELECT symbol FROM funds WHERE performanceId = :fund;', data)
+            rows = self.cursor.execute('SELECT symbol FROM funds WHERE symbol = :fund;', data)
             if rows.fetchone():
                 self.cursor.execute('''UPDATE funds
                 SET
@@ -278,7 +278,7 @@ class DB:
                     fifteenYear = :fifteenYear,
                     inception = :inception,
                     starRating = :starRating
-                WHERE :fund = performanceId;''', data)
+                WHERE symbol = :fund;''', data)
             else:
                 raise sqlite3.OperationalError(f'symbol {data["symbol"]} is not in the database.')
             self.cursor.execute('COMMIT TRANSACTION;')
@@ -361,7 +361,7 @@ class DB:
         return {'funds': selection_set}
     def missing_share_class_id_view(self) -> dict:
         sql = '''
-        SELECT symbol, performanceId FROM funds WHERE shareClassId IS NULL;
+        SELECT symbol, performanceId FROM funds WHERE shareClassId IS NULL AND performanceId IS NOT NULL;
         '''
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
@@ -374,12 +374,12 @@ class DB:
         performance_ids = []
         for select in selection:
             funds.append(select[0])
-            performance_ids.append((select[1]))
+            performance_ids.append(select[1])
         return {'funds': funds, 'performance_ids': performance_ids}
 
     def having_share_class_id_view(self) -> dict:
         sql = '''
-        SELECT symbol, performanceId, shareClassId FROM funds WHERE performanceId IS NOT NULL AND shareClassId IS NOT NULL;
+        SELECT symbol, performanceId, shareClassId, quoteType FROM funds WHERE performanceId IS NOT NULL AND shareClassId IS NOT NULL;
         '''
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
@@ -390,10 +390,17 @@ class DB:
             raise e
         funds = []
         performance_ids = []
+        share_class_ids = []
+        quote_types = []
         for select in selection:
             funds.append(select[0])
-            performance_ids.append((select[1]))
-        return {'funds': funds, 'performance_ids': performance_ids}
+            performance_ids.append(select[1])
+            share_class_ids.append(select[2])
+            quote_types.append(select[3])
+        return {'funds': funds,
+                'performance_ids': performance_ids,
+                'share_class_ids': share_class_ids,
+                'quote_types': quote_types}
 
     def valid_funds_view(self) -> dict:
         # TODO add dynamic filter recognition (1 filter file that automatically filters from screen, yh, & ms)
@@ -431,7 +438,7 @@ class DB:
             raise e
         return selection
 
-    def fund_data(self, symbol) -> []:
+    def fund_data_view(self, symbol) -> []:
         sql = '''
         SELECT symbol, ytd, oneYear, threeYear, fiveYear, tenYear, fifteenYear, inception, starRating FROM funds WHERE
             symbol = :symbol;

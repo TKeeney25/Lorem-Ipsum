@@ -37,3 +37,15 @@ Commonality
 2. Obtain shareclassid from get-detail
 3. scrape from morningstar depending on the data from get-detail
 4. return a csv result
+
+* Bad Symbols:
+* VMRXX
+* FACAX
+* FBBHX
+* FPFAX
+* UNTCW
+* GOFXX
+* AFAXX
+* BRK/B
+* BITW
+* LTCN
