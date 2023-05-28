@@ -55,7 +55,7 @@ class DataTree:
             parent.children.append(self)
         self.children = []
         self.data_source = data_source
-        self.data = []
+        self.data = {}
         self.event = threading.Event()
         self.incomplete = True
         self.kwargs = kwargs
@@ -248,6 +248,7 @@ def screen_fund(screen_type: str, offset: int, floor: int, roof=None, updater=Tr
 
 
 def fetch_yh_fund(fund, **kwargs):
+    fund = fund['fund']
     session = kwargs['session']
     data = get_yh_info(session, fund)
     if data is None:
@@ -268,6 +269,7 @@ def fetch_yh_fund(fund, **kwargs):
 
 
 def fetch_perf_id(fund, **kwargs):
+    fund = fund['fund']
     session = kwargs['session']
     data = get_perf_id(session, fund)
     if data is None:
@@ -287,6 +289,7 @@ def fetch_perf_id(fund, **kwargs):
 
 
 def fetch_ms_fund(fund, **kwargs):
+    fund = fund['perf_id']
     session = kwargs['session']
     data = get_ms_info(session, fund)
     if data is None:
@@ -301,6 +304,7 @@ def fetch_ms_fund(fund, **kwargs):
 
 
 def fetch_ms_trailing_returns(fund, **kwargs):
+    fund = fund['fund']
     session = kwargs['session']
     data = morningstar_scraper.get_stock_trailing_returns(session, fund)
     if data is None:
@@ -332,18 +336,23 @@ def master_thread(queue: PriorityQueue, priority: float, data_source: DataTree, 
 
     try:
         already_queued = set()
-        data = [1]
-        while (data_source.parent is not None and data_source.parent.incomplete) or len(data) > 0:
+        data = {'funds': [1]}
+        while (data_source.parent is not None and data_source.parent.incomplete) or len(data['funds']) > 0:
             if kill_event.is_set():
                 return
             data_source.event.wait()
             data = data_source.data
             data_source.event.clear()
-            for entry in data:
-                if entry in already_queued or (has_whitelist and entry not in whitelist):
+            for i in range(len(data['funds'])):
+                fund = data['funds'][i]
+                if 'performance_ids' in data:
+                    perf_id = data['performance_ids'][i]
+                else:
+                    perf_id = None
+                if fund in already_queued or (has_whitelist and fund not in whitelist):
                     continue
-                already_queued.add(entry)
-                queue.put((priority, (worker, (entry,))))
+                already_queued.add(fund)
+                queue.put((priority, (worker, ({'fund': fund, 'perf_id': perf_id},))))
         if len(data_source.children) == 0:
             for _ in range(0, MAX_WORKERS):
                 queue.put((DEATH_PRIORITY, (None, None)))
@@ -376,8 +385,11 @@ def manage_db(data_trees):
                         elif tree.data_source == 'missing_perf':
                             tree.data = db.missing_perf_id_view()
                             tree.event.set()
-                        elif tree.data_source == 'having_perf':
-                            tree.data = db.having_perf_id_view(**tree.kwargs['kwargs'])
+                        elif tree.data_source == 'missing_share':
+                            tree.data = db.missing_share_class_id_view()
+                            tree.event.set()
+                        elif tree.data_source == 'having_share':
+                            tree.data = db.having_share_class_id_view()
                             tree.event.set()
                 while not db_write_queue.empty():
                     write_queue_value = db_write_queue.get()
@@ -496,20 +508,26 @@ def fund_finder(input_file, output_file) -> bool:
             funds.add(fund[0])
     success = True
     missing_perf_data_tree = DataTree(data_source='missing_perf')
-    having_perf_data_tree = DataTree(parent=missing_perf_data_tree,
-                                     data_source='having_perf',
-                                     kwargs={'whitelist': funds})
+    missing_share_data_tree = DataTree(parent=missing_perf_data_tree,
+                                       data_source='missing_share')
+    having_share_data_tree = DataTree(parent=missing_share_data_tree,
+                                      data_source='having_share')
+
     ms_access_control = ApiAccessController()
 
     db_thread = threading.Thread(target=manage_db, name='db_master',
-                                 args=([missing_perf_data_tree, having_perf_data_tree],))
+                                 args=([missing_perf_data_tree, having_share_data_tree, missing_share_data_tree],))
 
     threads = [
         threading.Thread(target=master_thread, name='missing_perf_data_master',
                          args=(ms_queue, PERF_ID_PRIORITY, missing_perf_data_tree, fetch_perf_id),
                          kwargs={'whitelist': funds}),
-        threading.Thread(target=master_thread, name='having_perf_data_master',
-                         args=(ms_queue, MS_PRIORITY, having_perf_data_tree, fetch_ms_trailing_returns))
+        threading.Thread(target=master_thread, name='missing_share_id_master',
+                         args=(ms_queue, MS_PRIORITY, missing_share_data_tree, fetch_ms_fund),
+                         kwargs={'whitelist': funds}),
+        threading.Thread(target=master_thread, name='having_share_id_master',
+                         args=(ms_queue, MS_PRIORITY, having_share_data_tree, fetch_ms_trailing_returns),
+                         kwargs={'whitelist': funds})
     ]
     for i in range(0, MAX_WORKERS):
         threads += [

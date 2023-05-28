@@ -31,3 +31,9 @@ Commonality
 * If State == Ready -> defaults
 * If Current == ETF and State == Mutual Fund -> defaults
 * If Current == Mutual Fund and State == ETF -> continue
+
+# Task Two
+1. Take list of funds and fetch performance ids
+2. Obtain shareclassid from get-detail
+3. scrape from morningstar depending on the data from get-detail
+4. return a csv result

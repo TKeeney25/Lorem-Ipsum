@@ -11,6 +11,7 @@ CREATE_FUNDS_TABLE = '''
 CREATE TABLE IF NOT EXISTS funds (
     symbol TEXT NOT NULL,
     performanceId TEXT,
+    shareClassId TEXT,
     longName TEXT,
     quoteType TEXT,
     firstTradeDateMilliseconds INTEGER,
@@ -249,7 +250,9 @@ class DB:
             if rows.fetchone():
                 self.cursor.execute('''UPDATE funds
                 SET
-                    starRating = :starRating
+                    starRating = :starRating,
+                    shareClassId = :shareClassId,
+                    quoteType = :quoteType
                 WHERE :symbol = symbol;''', data)
             else:
                 raise sqlite3.OperationalError(f'symbol {data["symbol"]} is not in the database.')
@@ -300,7 +303,7 @@ class DB:
             self.cursor.execute('ROLLBACK TRANSACTION;')
             raise e
 
-    def valid_for_yh_finance_view(self) -> set:
+    def valid_for_yh_finance_view(self) -> dict:
         sql = '''
         SELECT symbol FROM funds WHERE yhFinanceLastAcquired IS NULL OR yhFinanceLastAcquired <= :lastMonthEpoch;
         '''
@@ -314,9 +317,9 @@ class DB:
         selection_set = set()
         for select in selection:
             selection_set.add(select[0])
-        return selection_set & self.valid_funds()
+        return {'funds': selection_set & self.valid_funds_view()['funds']}
 
-    def valid_for_ms_finance_view(self) -> set:
+    def valid_for_ms_finance_view(self) -> dict:
         sql = '''
         SELECT symbol, performanceId FROM funds WHERE
         (msFinanceLastAcquired IS NULL OR msFinanceLastAcquired <= :lastMonthEpoch) AND performanceId IS NOT NULL;
@@ -331,17 +334,17 @@ class DB:
         selection_symbols = set()
         for symbol, _ in selection:
             selection_symbols.add(symbol)
-        valid_symbols = selection_symbols & self.valid_funds()
+        valid_symbols = selection_symbols & self.valid_funds_view()['funds']
         return_perf_ids = set()
         for symbol, performance_id in selection:
             if symbol in valid_symbols:
                 return_perf_ids.add(performance_id)
-        return return_perf_ids
+        return {'funds': return_perf_ids}
 
-    def valid_for_perf_id_view(self) -> set:
-        return self.missing_perf_id_view() & self.valid_funds()
+    def valid_for_perf_id_view(self) -> dict:
+        return {'funds': self.missing_perf_id_view()['funds'] & self.valid_funds_view()['funds']}
 
-    def missing_perf_id_view(self) -> set:
+    def missing_perf_id_view(self) -> dict:
         sql = '''
         SELECT symbol FROM funds WHERE performanceId IS NULL;
         '''
@@ -355,11 +358,10 @@ class DB:
         selection_set = set()
         for select in selection:
             selection_set.add(select[0])
-        return selection_set
-
-    def having_perf_id_view(self, **kwargs) -> set:
+        return {'funds': selection_set}
+    def missing_share_class_id_view(self) -> dict:
         sql = '''
-        SELECT symbol, performanceId FROM funds WHERE performanceId IS NOT NULL;
+        SELECT symbol, performanceId FROM funds WHERE shareClassId IS NULL;
         '''
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
@@ -368,21 +370,32 @@ class DB:
         except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
             raise e
-        selection_set = set()
-        whitelist = None
-        if 'whitelist' in kwargs:
-            whitelist = kwargs['whitelist']
+        funds = []
+        performance_ids = []
         for select in selection:
-            if whitelist:
-                if select[0] not in whitelist:
-                    continue
-                selection_set.add(select[1])
-            else:
-                selection_set.add(select[0])
-        print(selection_set)
-        return selection_set
+            funds.append(select[0])
+            performance_ids.append((select[1]))
+        return {'funds': funds, 'performance_ids': performance_ids}
 
-    def valid_funds(self) -> set:
+    def having_share_class_id_view(self) -> dict:
+        sql = '''
+        SELECT symbol, performanceId, shareClassId FROM funds WHERE performanceId IS NOT NULL AND shareClassId IS NOT NULL;
+        '''
+        self.cursor.execute('BEGIN TRANSACTION;')
+        try:
+            selection = self.cursor.execute(sql).fetchall()
+            self.cursor.execute('COMMIT TRANSACTION;')
+        except Exception as e:
+            self.cursor.execute('ROLLBACK TRANSACTION;')
+            raise e
+        funds = []
+        performance_ids = []
+        for select in selection:
+            funds.append(select[0])
+            performance_ids.append((select[1]))
+        return {'funds': funds, 'performance_ids': performance_ids}
+
+    def valid_funds_view(self) -> dict:
         # TODO add dynamic filter recognition (1 filter file that automatically filters from screen, yh, & ms)
         data = {
             'epoch_ms_ten_years': get_epoch_from_ms(years=10),
@@ -399,7 +412,7 @@ class DB:
         return_selection = set()
         for item in selection:
             return_selection.add(item[0])
-        return return_selection
+        return {'funds': return_selection}
 
     def csv_data(self):
         data = {
@@ -491,6 +504,7 @@ def get_ten_years_ago():
 
 if __name__ == '__main__':
     db = DB()
+    db.create_tables()
     print(db.valid_for_perf_id_view())
     print(db.valid_for_ms_finance_view())
     print(db.valid_for_yh_finance_view())

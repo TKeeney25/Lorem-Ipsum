@@ -63,7 +63,7 @@ def _get_trailing_returns(session: requests.Session, url):
         'version': '4.14.0',
     }
 
-    response = session.get(url, headers=HEADERS | {'authorization': session_bearer}, params=payload, timeout=10)
+    response = session.get(url, headers=HEADERS | {'authorization': session_bearer}, params=payload, timeout=TIMEOUT)
     if response.status_code == 401:
         update_bearer()
     return validate_response(response)
@@ -72,6 +72,6 @@ def _get_trailing_returns(session: requests.Session, url):
 session_bearer = None
 update_bearer()
 if __name__ == '__main__':
-    response = get_stock_trailing_returns(requests.session(), '0P0001L8C5')
+    #response = get_stock_trailing_returns(requests.session(), '0P0001L8C5')
     response = get_etf_trailing_returns(requests.session(), 'FEUSA04AD2')
     print(response)

@@ -173,6 +173,14 @@ class MSFinanceResponse(Response):
         super().__init__('main', data)
         self.detail = Detail(data)
         self.symbol = MSTickerResponse('RegionAndTicker', data)
+        self.shareClassId = TextResponse('ShareClassId', data)
+        type_name = TextResponse('TypeName', data)
+        type_name.data = type_name.data.upper()
+        if 'FUND' in type_name.data:
+            type_name.data = 'MUTUALFUND'
+        self.quoteType = type_name
+
+
 
 
 class Detail(Response):
