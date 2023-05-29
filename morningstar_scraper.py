@@ -36,6 +36,27 @@ def update_bearer():
     search = re.search('(tokenMaaS:[\w\s]*\")(.*)(\")', response.text, re.IGNORECASE)
     session_bearer = 'Bearer ' + search.group(2)
 
+discovered_endpoints = '''
+https://www.us-api.morningstar.com/sal/sal-service/fund/securityMetaData/{share_class_id}
+https://www.us-api.morningstar.com/sal/sal-service/{fund|etf}/trailingReturn/v2/{share_class_id}/data
+https://www.us-api.morningstar.com/sal/sal-service/stock/trailingTotalReturns/{performance_id}/data
+https://www.us-api.morningstar.com/sal/sal-service/{etf|fund}/performance/v3/{share_class_id}
+https://www.us-api.morningstar.com/sal/sal-service/{etf|fund}/performance/v3/{share_class_id}
+https://www.us-api.morningstar.com/sal/sal-service/{etf|fund}/quote/v1/{share_class_id}/data
+'''
+def test(session: requests.Session, share_class_id: str):
+    url = f'https://www.us-api.morningstar.com/'
+    payload = {
+        'source': 'nav',
+        'moduleId': 6,
+        'ifIncludeAds': True,
+        'usrtType': 'v',
+        'q': 'AAPL',
+        'limit': 100,
+        'timestamp': 1685395337336,
+        'preferedList': None
+    }
+    return validate_response(session.get(url, headers=HEADERS | {'authorization': session_bearer}, params=payload, timeout=TIMEOUT))
 
 def get_fund_trailing_returns(session: requests.Session, performance_id):
     url = f'https://www.us-api.morningstar.com/sal/sal-service/fund/trailingReturn/v2/{performance_id}/data'
@@ -73,5 +94,6 @@ session_bearer = None
 update_bearer()
 if __name__ == '__main__':
     #response = get_stock_trailing_returns(requests.session(), '0P0001L8C5')
-    response = get_etf_trailing_returns(requests.session(), 'FEUSA04AD2')
+    #response = get_etf_trailing_returns(requests.session(), 'FEUSA04AD2')
+    response = test(requests.session(), 'F00000O2CG')
     print(response)
