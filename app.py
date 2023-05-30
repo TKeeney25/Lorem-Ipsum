@@ -36,6 +36,8 @@ DEFAULT_FLOOR: int = -1
 MAX_RESULTS: int = 50
 DEFAULT_DELAYS = [0, 1, 5, 10, 60, 300, 600]
 
+STATUS_LATENCY = 10
+
 yh_screen_dynamic_total = 0
 yh_screen_dynamic_total_lock = threading.Lock()
 yh_screen_dynamic_total_update_event = threading.Event()
@@ -58,7 +60,6 @@ class DataTree:
         self.children = []
         self.data_source = data_source
         self.data = {}
-        self.event = threading.Event()
         self.incomplete = True
         self.kwargs = kwargs
 
@@ -110,7 +111,10 @@ def worker_thread(
                 while api_access_controller.api_calls_remaining <= 0:
                     api_access_controller.api_calls_remaining_condition.wait()
                 api_access_controller.api_calls_remaining -= 1
-            method_return = method(args, session=session)
+            try:
+                method_return = method(args, session=session)
+            except requests.ReadTimeout:
+                method_return = None
             if method_return is None:
                 with api_access_controller.failures_lock:
                     api_access_controller.failures += 1
@@ -358,13 +362,14 @@ def master_thread(queue: PriorityQueue, priority: float, data_source: DataTree, 
     try:
         already_queued = set()
         do = True
-        while (data_source.parent is not None and data_source.parent.incomplete) or do:
-            do = False
+        while (data_source.parent is not None and data_source.parent.incomplete) or queue.qsize() != 0 or do:
             if kill_event.is_set():
                 return
-            data_source.event.wait()
             data = data_source.data
-            data_source.event.clear()
+            if len(data.keys()) == 0:
+                sleep(5)
+                continue
+            do = False
             for i in range(len(data['funds'])):
                 fund = list(data['funds'])[i]
                 if 'performance_ids' in data.keys():
@@ -404,25 +409,18 @@ def manage_db(data_trees):
             write_queue_value = None
             try:
                 for tree in data_trees:
-                    if not tree.event.is_set():
-                        if tree.data_source == 'yh':
-                            tree.data = db.valid_for_yh_finance_view()
-                            tree.event.set()
-                        elif tree.data_source == 'perf':
-                            tree.data = db.valid_for_perf_id_view()
-                            tree.event.set()
-                        elif tree.data_source == 'ms':
-                            tree.data = db.valid_for_ms_finance_view()
-                            tree.event.set()
-                        elif tree.data_source == 'missing_perf':
-                            tree.data = db.missing_perf_id_view()
-                            tree.event.set()
-                        elif tree.data_source == 'missing_share':
-                            tree.data = db.missing_share_class_id_view()
-                            tree.event.set()
-                        elif tree.data_source == 'having_share':
-                            tree.data = db.having_share_class_id_view()
-                            tree.event.set()
+                    if tree.data_source == 'yh':
+                        tree.data = db.valid_for_yh_finance_view()
+                    elif tree.data_source == 'perf':
+                        tree.data = db.valid_for_perf_id_view()
+                    elif tree.data_source == 'ms':
+                        tree.data = db.valid_for_ms_finance_view()
+                    elif tree.data_source == 'missing_perf':
+                        tree.data = db.missing_perf_id_view()
+                    elif tree.data_source == 'missing_share':
+                        tree.data = db.missing_share_class_id_view()
+                    elif tree.data_source == 'having_share':
+                        tree.data = db.having_share_class_id_view()
                 while not db_write_queue.empty():
                     write_queue_value = db_write_queue.get()
                     if write_queue_value is None:
@@ -462,8 +460,10 @@ def debug_aid(*args):
         alive_thread = alive_thread or arg.is_alive()
         print_str += f'|{arg.name}, {arg.is_alive()}|'
     logger.debug(print_str)
+    print_str = f'Queue Status: |db_queue, {db_write_queue.qsize()}||yh_queue, {yh_queue.qsize()}||ms_queue, {ms_queue.qsize()}'
+    logger.debug(print_str)
     if not program_ended or alive_thread:
-        threading.Timer(30, debug_aid, args).start()
+        threading.Timer(STATUS_LATENCY, debug_aid, args).start()
 
 
 def ticker_tracker() -> bool:
@@ -581,6 +581,8 @@ def fund_finder(input_file, output_file) -> bool:
             if len(unchecked_exceptions) > 0:
                 kill_event.set()
                 program_ended = True
+                for exception in unchecked_exceptions:
+                    logger.exception(repr(exception), exc_info=exception)
                 mail.debug_email(unchecked_exceptions)
                 unchecked_exceptions = []
                 success = False
@@ -645,5 +647,4 @@ def handle_args():
 
 
 if __name__ == '__main__':
-    # print(fetch_ms_trailing_returns('0P00002DCR', session=requests.session()).to_dict())
     handle_args()
