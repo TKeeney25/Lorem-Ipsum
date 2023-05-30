@@ -49,3 +49,6 @@ Commonality
 * BRK/B
 * BITW
 * LTCN
+
+Export using the following command:
+ - pyinstaller --splash ./data/images/icon.png -i ./data/images/icon.ico app.py -F
