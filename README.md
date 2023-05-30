@@ -49,3 +49,22 @@ Commonality
 * BRK/B
 * BITW
 * LTCN
+
+# Refactor
+## Issues
+* [ ] database.py return values (should be moved to a different logic layer)
+* [ ] settings month updates regardless of if the screen is running or something else.
+* [ ] Emailing errors should be an optional thing and not required. 
+* [ ] Emailing results should be an optional argument
+* [ ] last_month_ran should be moved away from settings.json
+* [ ] An intuitive naming schema should be set up for the fund screener as well as the fund fetcher. Too similar otherwise.
+* [ ] ^ Same thing for the files utilized by both
+* [ ] master_thread should become a class
+* [ ] main.py should be split into smaller files
+* [ ] ensure everything has a type hint
+
+## Features
+* [ ] Auto-update
+* [ ] Progress bar
+* [ ] Enhanced error catching and reporting
+* [ ] 

@@ -4,10 +4,11 @@ from logging.handlers import RotatingFileHandler
 import os
 import json
 
-LOG_DIR = r'./logs'
+DATA_DIR = './data'
+
+LOG_DIR = DATA_DIR + '/logs'
 LOG_FILE = LOG_DIR + '/app.log'
 
-DATA_DIR = r'./data'
 SETTINGS_FILE = DATA_DIR + '/settings.json'
 _DEFAULT_SETTINGS = {"api_key": "",
                      "log_type": "DEBUG",
@@ -75,6 +76,7 @@ def dump_progress():
     with open(PROGRESS_FILE, 'w') as progress_file:
         json.dump(progress, progress_file, indent=4)
 
+
 def dump_settings():
     with open(SETTINGS_FILE, 'w') as settings_file:
         json.dump(settings, settings_file, indent=4)
@@ -86,19 +88,25 @@ def reset_progress():
     dump_progress()
 
 
-logFormatter = logging.Formatter(fmt='%(asctime)s:%(threadName)s:%(levelname)s: %(message)s')
+def setup_logger():
+    log_formatter = logging.Formatter(fmt='%(asctime)s:%(threadName)s:%(levelname)s: %(message)s')
 
-logger = logging.getLogger()
-logger.setLevel(logging.getLevelNamesMapping()[settings['log_type']])
+    logger = logging.getLogger(__package__)
+    logger.setLevel(logging.getLevelNamesMapping()[settings['log_type']])
 
-handler = RotatingFileHandler(LOG_FILE, maxBytes=1024 * 1024, backupCount=50)
-handler.setFormatter(logFormatter)
-logger.addHandler(handler)
+    handler = RotatingFileHandler(LOG_FILE, maxBytes=1024 * 1024, backupCount=50)
+    handler.setFormatter(log_formatter)
+    logger.addHandler(handler)
 
-if settings['last_month_ran'] != datetime.datetime.today().month:
-    reset_progress()
-    settings['last_month_ran'] = datetime.datetime.today().month
-    dump_settings()
 
+def update_month_ran():
+    if settings['last_month_ran'] != datetime.datetime.today().month:
+        reset_progress()
+        settings['last_month_ran'] = datetime.datetime.today().month
+        dump_settings()
+
+
+setup_logger()
+update_month_ran()
 if __name__ == '__main__':
     pass

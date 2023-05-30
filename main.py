@@ -1,4 +1,5 @@
 import csv
+import logging
 import threading
 from dataclasses import field, dataclass
 from queue import Queue, PriorityQueue
@@ -12,10 +13,12 @@ import database
 import mail
 import morningstar_scraper
 import utils
-from utils import logger
 from http_requests import get_screen, gt_payload, btwn_payload, get_yh_info, get_perf_id, get_ms_info
 from structures import ScreenerResponse, MSFinanceResponse, YHFinanceResponse, PerformanceIdResponse, \
     MSFundTrailingReturnsResponse, MSStockTrailingReturnsResponse
+from exceptions import MaxCallsExceededError
+
+logger = logging.getLogger(__name__)
 
 MAX_WORKERS = 5
 
@@ -336,10 +339,6 @@ def fetch_ms_trailing_returns(fund, **kwargs):
         return MSFundTrailingReturnsResponse(data)
     else:
         return MSStockTrailingReturnsResponse(data)
-
-
-class MaxCallsExceededError(Exception):
-    pass
 
 
 @dataclass(order=True)

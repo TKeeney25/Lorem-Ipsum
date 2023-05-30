@@ -1,0 +1,2 @@
+class MaxCallsExceededError(Exception):
+    pass
