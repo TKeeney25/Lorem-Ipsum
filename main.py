@@ -100,7 +100,10 @@ def worker_thread(
                 while api_access_controller.api_calls_remaining <= 0:
                     api_access_controller.api_calls_remaining_condition.wait()
                 api_access_controller.api_calls_remaining -= 1
-            method_return = method(*args, session=session)
+            try:
+                method_return = method(*args, session=session)
+            except requests.ReadTimeout:
+                method_return = None
             if method_return is None:
                 with api_access_controller.failures_lock:
                     api_access_controller.failures += 1

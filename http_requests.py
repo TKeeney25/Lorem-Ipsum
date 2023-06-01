@@ -5,7 +5,7 @@ import requests
 import utils
 from utils import logger
 
-TIMEOUT = 30
+TIMEOUT = 60
 
 YH_HEADERS = {
     'content-type': "application/json",
