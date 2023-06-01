@@ -263,7 +263,26 @@ class DB:
             raise e
 
     def update_from_ms_trailing_returns(self, data):
-
+        keys = ['oneDay',
+                'oneWeek',
+                'oneMonth',
+                'threeMonth',
+                'ytd',
+                'oneYear',
+                'threeYear',
+                'fiveYear',
+                'tenYear',
+                'fifteenYear',
+                'inception']
+        if 'totalReturnPrice' in data.keys():
+            if len(data['totalReturnPrice']) == len(keys):
+                values = data['totalReturnPrice']
+            elif len(data['totalReturnNAV']) == len(keys):
+                values = data['totalReturnNAV']
+            else:
+                raise Exception('No totalReturnPrice or totalReturnNAV')
+            for i in range(len(keys)):
+                data[keys[i]] = values[i]
         self.cursor.execute('BEGIN TRANSACTION;')
         try:
             rows = self.cursor.execute('SELECT symbol FROM funds WHERE symbol = :fund;', data)

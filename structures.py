@@ -1,6 +1,11 @@
 import json
 from typing import Optional
 
+import requests
+
+import database
+import morningstar_scraper
+
 
 class Response:
     def __init__(self, api_id, data):
@@ -197,21 +202,11 @@ class MSFundTrailingReturnsResponse(Response):
         self.fund = TextResponse('fund', data)
         self.columnDefs = ListResponse('columnDefs', data)
         self.totalReturnNAV = ListResponse('totalReturnNAV', data)
-        temp_list = self.totalReturnNAV.to_dict()
-        self.oneDay = RealResponse('oneDay', temp_list[0])
-        self.oneWeek = RealResponse('oneWeek', temp_list[1])
-        self.oneMonth = RealResponse('oneMonth', temp_list[2])
-        self.threeMonth = RealResponse('threeMonth', temp_list[3])
-        self.ytd = RealResponse('ytd', temp_list[4])
-        self.oneYear = RealResponse('oneYear', temp_list[5])
-        self.threeYear = RealResponse('threeYear', temp_list[6])
-        self.fiveYear = RealResponse('fiveYear', temp_list[7])
-        self.tenYear = RealResponse('tenYear', temp_list[8])
-        self.fifteenYear = RealResponse('fifteenYear', temp_list[9])
-        self.inception = RealResponse('inception', temp_list[10])
+        self.totalReturnPrice = ListResponse('totalReturnPrice', data)
         self.returnDate = TextResponse('fundReturnDate', data)
         self.ratingDate = TextResponse('ratingDate', data)
         self.starRating = IntegerResponse('overallMorningstarRating', data)
+
 
 
 class MSStockTrailingReturnsResponse(Response):
@@ -310,8 +305,13 @@ class AnnualReturn(Response):
 
 if __name__ == '__main__':
     # (ScreenerResponse(json.load(open('./tests/defaults/screen_data.json'))).to_dict())
-    print(MSFinanceResponse(json.load(open('./tests/defaults/ms_get_detail.json'))[0]).to_dict())
+    #print(MSFinanceResponse(json.load(open('./tests/defaults/ms_get_detail.json'))[0]).to_dict())
     # print(PerformanceIdResponse(json.load(open('./tests/defaults/perf_id_data.json'))['results'][0]).to_dict())
-    # hlep = MSTrailingReturnsResponse(morningstar_scraper.get_trailing_returns('FOUSA069TK').json())
-    # print(hlep.to_dict())
+    hlep = MSFundTrailingReturnsResponse(morningstar_scraper.get_etf_trailing_returns(requests.Session(), 'FEUSA04AD2'))
+    db = database.DB()
+    db.create_tables()
+    hlep.fund.data = 'TEST'
+    db.add_fund('TEST')
+    db.update_from_ms_trailing_returns(hlep.to_dict())
+    print(hlep.to_dict())
     pass
