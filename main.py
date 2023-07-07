@@ -101,8 +101,9 @@ def worker_thread(
                     api_access_controller.api_calls_remaining_condition.wait()
                 api_access_controller.api_calls_remaining -= 1
             try:
+                logger.debug(f'Method: {method}, Args: {args}')
                 method_return = method(*args, session=session)
-            except requests.ReadTimeout:
+            except (requests.ReadTimeout, requests.ConnectionError, requests.ConnectTimeout):
                 method_return = None
             if method_return is None:
                 with api_access_controller.failures_lock:
@@ -241,9 +242,10 @@ def screen_fund(screen_type: str, offset: int, floor: int, roof=None, updater=Tr
 def fetch_yh_fund(fund, **kwargs):
     session = kwargs['session']
     data = get_yh_info(session, fund)
-    if data is None:
+    if data is None or data == -1:
         return None
-
+    if len(data['defaultKeyStatistics']) == 0:
+        return BadFund(symbol=fund)
     try:
         yh_finance_response = YHFinanceResponse(data)
         with yh_api_calls_lock:
@@ -261,7 +263,7 @@ def fetch_yh_fund(fund, **kwargs):
 def fetch_perf_id(fund, **kwargs):
     session = kwargs['session']
     data = get_perf_id(session, fund)
-    if data is None:
+    if data is None or data == -1:
         return None
     result = None
     for entry in data['results']:
@@ -282,7 +284,7 @@ def fetch_ms_fund(fund, **kwargs):
     data = get_ms_info(session, fund)
     if data is None:
         return None
-    if data == -1 or 'symbol' not in data[0]:
+    if data == -1 or 'Detail' not in data[0].keys():
         return BadFund(perf_id=fund)
     with ms_api_calls_lock:
         utils.progress['ms_api_calls'] += 1
@@ -299,7 +301,9 @@ def master_thread(queue: PriorityQueue, priority: float, data_source: DataTree, 
     try:
         already_queued = set()
         data = [1]
-        while data_source.parent.incomplete or len(data) > 0:
+        do = True
+        while data_source.parent.incomplete or len(data) > 0 or do:
+            do = False
             if kill_event.is_set():
                 return
             data_source.event.wait()
@@ -422,6 +426,8 @@ def main() -> bool:
                 kill_event.set()
                 program_ended = True
                 utils.dump_progress()
+                for exception in unchecked_exceptions:
+                    logger.exception(repr(exception))
                 mail.debug_email(unchecked_exceptions)
                 unchecked_exceptions = []
                 success = False

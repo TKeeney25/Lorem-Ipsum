@@ -1,9 +1,9 @@
 import json
 from typing import Optional
 
+import requests
 
-# TODO add list structure
-# TODO add dict structure
+import http_requests
 
 class Response:
     def __init__(self, api_id, data):
@@ -193,6 +193,7 @@ class YHFinanceResponse(Response):
         self.defaultKeyStatistics = DefaultKeyStatistics(data)
         self.fundPerformance = FundPerformance(data)
         self.fundProfile = FundProfile(data)
+        self.summaryDetail = SummaryDetail(data)
 
 
 class DefaultKeyStatistics(Response):
@@ -201,8 +202,13 @@ class DefaultKeyStatistics(Response):
         self.beta3Year = RealResponse('beta3Year', self.data)
         self.totalAssets = IntegerResponse('totalAssets', self.data)
         self.fundFamily = TextResponse('fundFamily', self.data)
+        self.inception = IntegerResponse('fundInceptionDate', self.data)
+
+
+class SummaryDetail(Response):
+    def __init__(self, data):
+        super().__init__('summaryDetail', data)
         self.percent_yield = RealResponse('yield', self.data)
-        self.category = TextResponse('category', self.data)
 
 
 class FundPerformance(Response):
@@ -229,6 +235,7 @@ class TrailingReturns(Response):
 class FundProfile(Response):
     def __init__(self, data):
         super().__init__('fundProfile', data)
+        self.category = TextResponse('categoryName', self.data)
         self.feesExpensesInvestment = FeesExpensesInvestment(self.data)
         self.brokerages = ListResponse('brokerages', self.data)
 
@@ -256,6 +263,8 @@ class AnnualReturn(Response):
 
 if __name__ == '__main__':
     # (ScreenerResponse(json.load(open('./tests/defaults/screen_data.json'))).to_dict())
-    print('err' in YHFinanceResponse(json.load(open('./tests/defaults/yh_bad_data.json'))).defaultKeyStatistics.data)
-    # print(MSFinanceResponse(json.load(open('./tests/defaults/ms_get_detail.json'))[0]).to_dict())
+    # print('err' in YHFinanceResponse(json.load(open('./tests/defaults/yh_bad_data.json'))).defaultKeyStatistics.data)
+    # print(MSFinanceResponse(http_requests.get_ms_info(requests.Session(), '0P00006C5N')[0]).to_dict())
+    print(YHFinanceResponse(http_requests.get_yh_info(requests.Session(), 'THYFX')).to_dict())
+
     # print(PerformanceIdResponse(json.load(open('./tests/defaults/perf_id_data.json'))['results'][0]).to_dict())

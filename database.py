@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS funds (
     longName TEXT,
     quoteType TEXT,
     firstTradeDateMilliseconds INTEGER,
+    inception INTEGER,
     lastScreened INTEGER,
     yhFinanceLastAcquired INTEGER,
     msFinanceLastAcquired INTEGER,
@@ -240,8 +241,24 @@ class DB:
         except Exception as e:
             self.cursor.execute('ROLLBACK TRANSACTION;')
             raise e
+    def remove_duplicate_performance_ids(self, data):
+        """Used incase the stock changes name"""
+        self.cursor.execute('BEGIN TRANSACTION;')
+        try:
+            rows = self.cursor.execute('SELECT symbol FROM funds WHERE symbol != :symbol AND performanceId = :performanceId', data)
+            for symbol in rows.fetchall():
+                self.cursor.execute('''UPDATE funds
+                SET
+                    performanceId = NULL
+                WHERE symbol = :symbol
+                ''', {'symbol': symbol[0]})
+            self.cursor.execute('COMMIT TRANSACTION;')
+        except Exception as e:
+            self.cursor.execute('ROLLBACK TRANSACTION;')
+            raise e
 
     def update_performance_id(self, data):
+        self.remove_duplicate_performance_ids(data)
         self.cursor.execute('BEGIN TRANSACTION;')
         data['unix_time'] = unix_time()
         try:
@@ -382,7 +399,7 @@ class DB:
 
 def function_regex(value, pattern):
     c_pattern = re.compile(pattern.lower())
-    return c_pattern.search(fr'\b{value.lower()}\b') is not None
+    return c_pattern.match(fr'\b{value.lower()}\b') is not None
 
 
 def unix_time():
@@ -406,13 +423,13 @@ def get_ten_years_ago():
 
 
 if __name__ == '__main__':
-    db = DB()
-    print(db.valid_for_perf_id_view())
-    print(db.valid_for_ms_finance_view())
-    print(db.valid_for_yh_finance_view())
+    # db = DB()
+    # print(db.valid_for_perf_id_view())
+    # print(db.valid_for_ms_finance_view())
+    # print(db.valid_for_yh_finance_view())
     print(get_last_month_epoch_ms())
     print(get_epoch_from_ms(years=10))
-    print(db.csv_data())
-    print(db.cursor.execute('select * from funds limit 10'))
-    print([description[0] for description in db.cursor.description])
-    db.close_connections()
+    # print(db.csv_data())
+    # print(db.cursor.execute('select * from funds limit 10'))
+    # print([description[0] for description in db.cursor.description])
+    # db.close_connections()
